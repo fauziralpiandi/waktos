@@ -9,8 +9,6 @@ const FORMAT: Record<FormatStyle, Partial<Intl.DateTimeFormatOptions>> = {
   full: { month: 'long', day: 'numeric', year: 'numeric', weekday: 'long' },
 };
 
-// Cache improves performance—
-// for repeated formatting with same options
 const CACHE = new Map<string, Intl.DateTimeFormat>();
 
 export function absolute(date: DateInput, opts: AbsoluteOptions = {}): string {
@@ -30,7 +28,18 @@ export function absolute(date: DateInput, opts: AbsoluteOptions = {}): string {
     let dtf = CACHE.get(key);
 
     if (!dtf) {
-      const dtfOpts = { ...FORMAT[format], timeZone: timezone };
+      const dtfOpts = { ...FORMAT[format] };
+
+      if (timezone) {
+        try {
+          new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(
+            new Date(),
+          );
+          dtfOpts.timeZone = timezone;
+        } catch (_) {
+          // Invalid timezone, continue without setting it
+        }
+      }
 
       if (includeWeekday && format !== 'full') dtfOpts.weekday = 'long';
 
