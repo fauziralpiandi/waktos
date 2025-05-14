@@ -8,7 +8,7 @@ Focused exclusively on date formatting, keeping the library small and specialize
 
 | Feature                 |           Waktos            | Common in Other Libraries  |
 | ----------------------- | :-------------------------: | :------------------------: |
-| **Bundle Size**         |          `~1.2 kB`          |    Typically `6-70 kB`     |
+| **Bundle Size**         |           `~2 kB`           |    Typically `6-70 kB`     |
 | **Dependencies**        |            None             | Typically none to several  |
 | **Relative Formatting** |             Yes             |            Yes             |
 | **Absolute Formatting** |             Yes             |            Yes             |
@@ -24,7 +24,7 @@ Focused exclusively on date formatting, keeping the library small and specialize
 | ----------------------------- | --------------------------------------------------- | ------------------------------------------ |
 | **Performance-critical apps** | Ultra-lightweight                                   | Focused on formatting only                 |
 | **Simple formatting needs**   | Clean, intuitive API with minimal learning curve    | Specialized rather than all-purpose        |
-| **Human-readable displays**   | Natural language formats like                       | Formatting-first approach                  |
+| **Human-readable displays**   | Natural language formats                            | Formatting-first approach                  |
 | **Modern application stacks** | Full TypeScript support with excellent tree-shaking | Newer library with active development      |
 | **PWAs and mobile sites**     | Optimized for size-sensitive environments           | Prioritizes essential features over extras |
 
@@ -169,10 +169,6 @@ formatter.absolute({ includeTime: true });
 ## 🤝 Contributing
 
 Contributions welcome! Fork the repo, make your changes, ensure tests pass, and submit a PRs. Please maintain test coverage and follow the existing code style.
-
-## 💡 Acknowledgments
-
-https://github.com/fauziralpiandi/zira.my.id/blob/main/src/lib/utils/formatted-date.ts
 
 ---
 
