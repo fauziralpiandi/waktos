@@ -26,27 +26,38 @@ describe('relative', () => {
       | 'years',
     direction: 'past' | 'future' = 'past',
   ): Date => {
-    const unitMultipliers = {
-      seconds: 1000,
-      minutes: 60 * 1000,
-      hours: 60 * 60 * 1000,
-      days: 24 * 60 * 60 * 1000,
-      weeks: 7 * 24 * 60 * 60 * 1000,
-      months: 30 * 24 * 60 * 60 * 1000,
-      years: 365 * 24 * 60 * 60 * 1000,
-    };
+    const result = new Date(fixedReferenceDate);
+    const sign = direction === 'past' ? -1 : 1;
 
-    const offsetMilliseconds = amount * unitMultipliers[unit];
-    const timeModifier = direction === 'past' ? -1 : 1;
+    switch (unit) {
+      case 'seconds':
+        result.setSeconds(result.getSeconds() + sign * amount);
+        break;
+      case 'minutes':
+        result.setMinutes(result.getMinutes() + sign * amount);
+        break;
+      case 'hours':
+        result.setHours(result.getHours() + sign * amount);
+        break;
+      case 'days':
+        result.setDate(result.getDate() + sign * amount);
+        break;
+      case 'weeks':
+        result.setDate(result.getDate() + sign * amount * 7);
+        break;
+      case 'months':
+        result.setMonth(result.getMonth() + sign * amount);
+        break;
+      case 'years':
+        result.setFullYear(result.getFullYear() + sign * amount);
+        break;
+    }
 
-    return new Date(
-      fixedReferenceDate.getTime() + timeModifier * offsetMilliseconds,
-    );
+    return result;
   };
 
   describe('formats time correctly across different units', () => {
     it('formats past dates with appropriate units and special cases', () => {
-      // Time units with quantity
       const pastCases = [
         { amount: 5, unit: 'seconds', expected: 'just now' },
         { amount: 30, unit: 'seconds', expected: 'just now' },

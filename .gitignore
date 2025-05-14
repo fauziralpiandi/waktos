@@ -83,12 +83,6 @@ $RECYCLE.BIN/
 .Trash-*
 .nfs*
 
-# Replit
-.replit
-.replit.nix
-replit.nix
-.cache/
-
 # GitHub Codespaces
 .devcontainer/
 .devcontainer.json
