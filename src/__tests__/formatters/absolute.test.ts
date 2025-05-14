@@ -3,7 +3,6 @@ import { DateInput } from '../../types';
 import { absolute } from '../../formatters/absolute';
 
 describe('absolute', () => {
-  // Use a fixed date for consistent test results
   const testDate = new Date('2025-05-10T12:30:45Z');
 
   describe('formats dates with different format options', () => {
