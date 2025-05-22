@@ -5,9 +5,13 @@
 **Death to ugly dates!**
 
 ```js
-console.log('I spawned on', absolute(new Date('2005-04-26'))); // I spawned on Tuesday, April 26, 2005
+console.log(
+  'I spawned on', absolute(new Date('2005-04-26'))
+); // I spawned on Tuesday, April 26, 2005
 
-console.log('That was', relative(new Date('2005-04-26')), ':>'); // That was 20 years ago :>
+console.log(
+  'That was', relative(new Date('2005-04-26')), ':>'
+); // That was 20 years ago :>
 ```
 
 Two intuitive functions that do exactly what you’d expect—perfect for UIs, blog posts, chat apps, and anything social.
