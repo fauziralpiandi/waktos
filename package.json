@@ -35,8 +35,8 @@
   ],
   "scripts": {
     "build": "tsup && find dist -type f -exec gzip -c {} \\; | wc -c",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "lint": "prettier --check \"src/**/*.ts\" && eslint src --ext .ts",
+    "format": "prettier --write \"**/*.{ts,md}\"",
+    "lint": "prettier --check \"**/*.{ts,md}\" && eslint --fix --ext .ts",
     "prepublishOnly": "npm run build",
     "test": "vitest run --coverage",
     "test:watch": "vitest watch",
