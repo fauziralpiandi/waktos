@@ -3,11 +3,7 @@
   "version": "2.0.0",
   "description": "Simple, friendly time formatting for human-readable display.",
   "keywords": [
-    "date",
-    "formatting",
-    "i18n",
-    "localization",
-    "time"
+    "waktos"
   ],
   "homepage": "https://github.com/fauziralpiandi/waktos#readme",
   "bugs": {
