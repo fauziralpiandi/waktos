@@ -1,20 +1,45 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
-    "target": "ES2020",
-    "module": "ESNext",
-    "moduleDetection": "force",
-    "moduleResolution": "Bundler",
-    "verbatimModuleSyntax": true,
+    // Configuration
+    "target": "ES2021",
+    "lib": ["ES2021", "ES2021.Intl"],
+    "types": ["node"],
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "useDefineForClassFields": true,
+
+    // Module System
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "isolatedModules": true,
-    "noEmit": true,
+
+    // Type Checking
     "strict": true,
-    "skipLibCheck": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noUncheckedIndexedAccess": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noImplicitOverride": true,
+
+    // Additional Checks
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noPropertyAccessFromIndexSignature": false,
+    "noUncheckedSideEffectImports": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    // Emit
+    "noEmitOnError": true,
+    "removeComments": true,
+
+    // Interop
+    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

@@ -1,16 +1,20 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  format: ['esm'],
-  entry: ['src/index.ts'],
-  target: 'ES2020',
+  entry: ['src/index.ts', 'src/locale/*.ts', 'src/plugin/*.ts'],
+  format: ['esm', 'cjs'],
+  target: 'ES2021',
   outDir: 'dist',
-  dts: true,
+  bundle: true,
   clean: true,
+  dts: true,
   minify: true,
-  splitting: true,
+  sourcemap: false, // dev
+  splitting: false,
   treeshake: true,
   esbuildOptions(options) {
-    options.charset = 'utf8';
+    options.supported = {
+      'dynamic-import': true,
+    };
   },
 });

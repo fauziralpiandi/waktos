@@ -1,11 +1,15 @@
 {
   "name": "waktos",
   "version": "2.0.0",
-  "description": "Simple, friendly time formatting for human-readable display.",
+  "description": "~5kb for the death of ugly dates!",
   "keywords": [
-    "waktos"
+    "waktos",
+    "date",
+    "time",
+    "datetime",
+    "i18n"
   ],
-  "homepage": "https://github.com/fauziralpiandi/waktos#readme",
+  "homepage": "https://github.com/fauziralpiandi/waktos/#readme",
   "bugs": {
     "url": "https://github.com/fauziralpiandi/waktos/issues"
   },
@@ -19,41 +23,78 @@
   "type": "module",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
+    },
+    "./locale/*": {
+      "types": "./dist/locale/*.d.ts",
+      "import": "./dist/locale/*.js",
+      "require": "./dist/locale/*.cjs"
+    },
+    "./plugin/*": {
+      "types": "./dist/plugin/*.d.ts",
+      "import": "./dist/plugin/*.js",
+      "require": "./dist/plugin/*.cjs"
     }
   },
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "source": "./src/index.ts",
+  "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/index.d.ts"
+      ],
+      "locale/*": [
+        "dist/locale/*.d.ts"
+      ],
+      "plugin/*": [
+        "dist/plugin/*.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup && find dist -type f -exec gzip -c {} \\; | wc -c",
-    "format": "prettier --write \"**/*.{ts,md}\"",
-    "lint": "prettier --check \"**/*.{ts,md}\" && eslint --fix --ext .ts",
+    "bench": "vitest bench --run",
+    "build": "bash scripts/builder.sh",
+    "bundle": "node scripts/bundle-analyzer.js",
+    "check": "bash scripts/typechecker.sh",
+    "format": "prettier --write \"**/*.{js,ts,md}\"",
+    "lint": "bash scripts/linter.sh",
     "prepublishOnly": "npm run build",
-    "test": "vitest run --coverage",
-    "test:watch": "vitest watch",
-    "typecheck": "tsc --noEmit"
+    "test": "vitest --run"
   },
+  "browserslist": [
+    "Chrome >= 85",
+    "Firefox >= 79",
+    "Safari >= 14.7",
+    "Edge >= 85",
+    "iOS >= 14.7",
+    "Android >= 85",
+    "not IE 11",
+    "not dead",
+    "not op_mini all"
+  ],
   "devDependencies": {
-    "@eslint/js": "9.27.0",
-    "@types/node": "22.15.21",
-    "@vitest/coverage-v8": "3.1.4",
-    "eslint": "9.27.0",
-    "jiti": "2.4.2",
-    "prettier": "3.5.3",
+    "@eslint/js": "9.33.0",
+    "@types/node": "24.3.0",
+    "eslint": "9.33.0",
+    "prettier": "3.6.2",
     "tsup": "8.5.0",
+    "tsx": "4.20.4",
     "typescript": "5.8.3",
-    "typescript-eslint": "8.32.1",
-    "vitest": "3.1.4"
+    "typescript-eslint": "8.39.1",
+    "vitest": "3.2.4"
   },
   "engines": {
     "node": ">=18"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }
