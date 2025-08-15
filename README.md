@@ -1,7 +1,6 @@
 # Waktos ⏰
 
 [![npm version](https://img.shields.io/npm/v/waktos.svg)](https://www.npmjs.com/package/waktos)
-[![bundle size](https://img.shields.io/bundlephobia/minzip/waktos.svg)](https://bundlephobia.com/package/waktos)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/npm/dm/waktos.svg)](https://www.npmjs.com/package/waktos)
