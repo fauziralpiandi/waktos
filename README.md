@@ -9,18 +9,25 @@
 
 Tired of wrestling with JavaScript dates? **Waktos** makes working with time actually enjoyable. From simple “add 1 second” to complex timezone juggling — it just works.
 
+- 🪶 **Lightweight** — Only ~5kb, tiny but mighty
+- 🌍 **Global** — Any locale, every timezone, works everywhere
+- 🧩 **Modular** — Import only what you need, tree-shake the rest
+- ⚡ **Fast** — Smart caching, built for performance
+- 🛡️ **Safe** — TypeScript-first, catches bugs before users do
+- 🎯 **Simple** — API feels natural, no docs-diving required
+
+## Quick Taste ☕
+
 ```sh
 npm i waktos
 ```
-
-## Quick Taste ☕
 
 ```js
 import waktos from 'waktos';
 
 // Create a date in your timezone
 const now = waktos();
-console.log(now.toString()); // "2025-08-16T10:30:45+07:00" (example)
+console.log(now.toString()); // "2023-05-19T01:02:03+07:00" (example)
 
 // Pick any date, no more timezone headaches
 const date = waktos('2005-04-26', { timezone: 'Asia/Jakarta' });
@@ -28,15 +35,6 @@ console.log(date.format('PPP')); // "April 26, 2005"
 ```
 
 **That's it.** No setup. No tears. huft~
-
-## Why?
-
-- 🪶 **Lightweight** — Only ~5kb, tiny but mighty
-- 🌍 **Global** — Any locale, every timezone, works everywhere
-- 🧩 **Modular** — Import only what you need, tree-shake the rest
-- ⚡ **Fast** — Smart caching, built for performance
-- 🛡️ **Safe** — TypeScript-first, catches bugs before users do
-- 🎯 **Simple** — API feels natural, no docs-diving required
 
 ## Master Dates in 5 Minutes 🚀
 
@@ -177,6 +175,4 @@ if (now.isBefore(deadline, 'day')) {
 
 Any issues? Missing your locale? Pull requests welcome! 🤝
 
----
-
-> Build faster. Ship cleaner. Don’t waste your waktos :>
+> Build faster. Ship cleaner. Don’t waste your waktos.
