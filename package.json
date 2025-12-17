@@ -18,7 +18,7 @@
     "url": "git+https://github.com/fauziralpiandi/waktos.git"
   },
   "license": "MIT",
-  "author": "Fauzira Alpiandi <fwzyrln@gmail.com>",
+  "author": "Fauzira Alpiandi <fauziralpiandi.dev@gmail.com>",
   "sideEffects": false,
   "type": "module",
   "exports": {
@@ -62,7 +62,6 @@
     "bench": "vitest bench --run",
     "build": "bash scripts/builder.sh",
     "bundle": "node scripts/bundle-analyzer.js",
-    "check": "bash scripts/typechecker.sh",
     "format": "prettier --write \"**/*.{js,ts,md}\"",
     "lint": "bash scripts/linter.sh",
     "prepublishOnly": "npm run build",
@@ -79,19 +78,27 @@
     "not dead",
     "not op_mini all"
   ],
-  "devDependencies": {
-    "@eslint/js": "9.33.0",
-    "@types/node": "24.3.0",
-    "eslint": "9.33.0",
-    "prettier": "3.6.2",
-    "tsup": "8.5.0",
-    "tsx": "4.20.4",
-    "typescript": "5.9.2",
-    "typescript-eslint": "8.40.0",
-    "vitest": "3.2.4"
+  "release": {
+    "branches": [
+      "main"
+    ],
+    "plugins": [
+      "@semantic-release/commit-analyzer",
+      "@semantic-release/release-notes-generator",
+      "@semantic-release/github"
+    ]
   },
-  "engines": {
-    "node": ">=18"
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.0.3",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "semantic-release": "^25.0.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.0",
+    "vitest": "^4.0.16"
   },
   "publishConfig": {
     "access": "public",

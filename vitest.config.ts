@@ -4,16 +4,7 @@ export default defineConfig({
   test: {
     name: 'waktos',
     environment: 'node',
-    include: ['**/*.test.ts'],
-    globals: true,
-    pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: false,
-        minForks: 1,
-        maxForks: 4,
-      },
-    },
+    include: ['tests/**/*.test.ts'],
     benchmark: {
       include: ['**/*.bench.ts'],
     },
