@@ -1,116 +1,52 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      semver:
-        description: 'Semantic versioning type?'
-        required: true
-        type: choice
-        options:
-          - PATCH
-          - MINOR
-          - MAJOR
+  push:
+    branches:
+      - main
 
 jobs:
   release:
-    name: New release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          registry-url: 'https://registry.npmjs.org/'
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Bump version
-        id: bump
-        run: |
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "Current version: $CURRENT_VERSION"
-          
-          IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
-          MAJOR="${VERSION_PARTS[0]}"
-          MINOR="${VERSION_PARTS[1]}"
-          PATCH="${VERSION_PARTS[2]}"
-          
-          case "${{ github.event.inputs.semver }}" in
-            MAJOR)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            MINOR)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            PATCH)
-              PATCH=$((PATCH + 1))
-              ;;
-          esac
-          
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          npm version $NEW_VERSION --no-git-tag-version
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          [ -z "$PREV_TAG" ] && PREV_TAG=$(git rev-list --max-parents=0 HEAD)
-
-          REPO="${{ github.repository }}"
-          CHANGES=$(git log --pretty=format:"* %s [<code>%h</code>](https://github.com/$REPO/commit/%H)" $PREV_TAG..HEAD)
-
-          {
-            echo "### What's Changed?"
-            echo ""
-            echo "$CHANGES"
-            echo ""
-            echo "> https://github.com/$REPO/compare/$PREV_TAG...v${{ steps.bump.outputs.new_version }}"
-          } > CHANGELOG.md
-
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          cat CHANGELOG.md >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Push version bump
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add package*.json
-          git commit -m "v${{ steps.bump.outputs.new_version }}" -m "Co-authored-by: Fauzira Alpiandi <fwzyrln@gmail.com>"
-          git push origin HEAD:main
-
-      - name: Create tag
-        run: |
-          git tag -f v${{ steps.bump.outputs.new_version }}
-          git push -f origin v${{ steps.bump.outputs.new_version }}
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: v${{ steps.bump.outputs.new_version }}
-          tag_name: v${{ steps.bump.outputs.new_version }}
-          body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish to NPM
         run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npx semantic-release --dry-run > output.log 2>&1
 
-          npm config get registry
-          npm publish --access public
+          V=$(grep "The next release version is" output.log | tail -1 | awk '{print $NF}')
+          echo "Next version: $V"
+
+          if [ -n "$V" ]; then
+            npm version "$V" --no-git-tag-version
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package*.json
+            git commit -m "v$V [skip ci]" -m "Co-authored-by: Fauzira Alpiandi <fauziralpiandi.dev@gmail.com>"
+            git push origin HEAD:main
+          fi
+
+      - name: Semantic release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
