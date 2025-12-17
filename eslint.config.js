@@ -1,7 +1,8 @@
+import { defineConfig, globalIgnores } from 'eslint/config';
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
+export default defineConfig([
   eslint.configs.recommended,
   tseslint.configs.strictTypeChecked,
   tseslint.configs.stylisticTypeChecked,
@@ -10,10 +11,10 @@ export default tseslint.config(
       ecmaVersion: 2021,
       sourceType: 'module',
       parserOptions: {
-        project: true,
-        projectService: true,
-        tsconfigRootDir: import.meta.dirname,
+        project: './tsconfig.json',
+        tsconfigRootDir: new URL('.', import.meta.url).pathname,
       },
     },
   },
-);
+  globalIgnores(['**/*.test.ts']),
+]);
