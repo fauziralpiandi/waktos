@@ -7,16 +7,16 @@
 
 > ~5kb for the death of ugly dates!
 
-Tired of wrestling with JavaScript dates? **Waktos** makes working with time actually enjoyable. From simple “add 1 second” to complex timezone juggling — it just works.
+**Waktos** is a lightweight, immutable date manipulation library for JavaScript and TypeScript. Unlike native `Date` which is bound to the system's local time, **Waktos instances carry their own Timezone and Locale context**, ensuring consistent behavior across all operations.
 
-- 🪶 **Lightweight** — Only ~5kb, tiny but mighty
-- 🌍 **Global** — Any locale, every timezone, works everywhere
-- 🧩 **Modular** — Import only what you need, tree-shake the rest
-- ⚡ **Fast** — Smart caching, built for performance
-- 🛡️ **Safe** — TypeScript-first, catches bugs before users do
-- 🎯 **Simple** — API feels natural, no docs-diving required
+- 🪶 **Lightweight** — Only ~5kb minified + gzipped
+- 🌍 **Context Aware** — Operations respect the instance's specific Timezone & Locale
+- 🧩 **Modular** — Tree-shakeable plugin architecture
+- ⚡ **Fast** — Optimized performance with smart caching
+- 🛡️ **Safe** — Immutable instances and first-class TypeScript support
+- 🎯 **Simple** — Intuitive, chainable API that just works
 
-## Quick Taste ☕
+## Quick Start ☕
 
 ```sh
 npm i waktos
@@ -25,40 +25,75 @@ npm i waktos
 ```js
 import waktos from 'waktos';
 
-// Create a date in your timezone
+// Current time in your system's timezone
 const now = waktos();
-console.log(now.toString()); // "2023-05-19T01:02:03+07:00" (example)
 
-// Pick any date, no more timezone headaches
-const date = waktos('2005-04-26', { timezone: 'Asia/Jakarta' });
-console.log(date.format('PPP')); // "April 26, 2005"
+// Explicitly set timezone and locale
+const date = waktos('2005-04-26', {
+  timezone: 'Asia/Jakarta',
+  locale: 'id-ID',
+});
+
+console.log(date.format('PPPP')); // "Selasa, 26 April 2005"
 ```
 
-**That's it.** No setup. No tears. huft~
+## Why Waktos? 🌐
 
-## Master Dates in 5 Minutes 🚀
+### Timezone & Locale Aware Architecture
+
+Every Waktos instance "remembers" its configuration. Operations like `startOf`, `endOf`, or `add` calculate results based on the **instance's timezone**, not the server's or browser's local time.
 
 ```js
-// Create dates the obvious way
-waktos(); // Right now with your timezone
+const timestamp = 1715000000000; // A specific moment in UTC
 
-const birthday = waktos('2005-04-26');
+const ny = waktos(timestamp, { timezone: 'America/New_York' });
+const tokyo = waktos(timestamp, { timezone: 'Asia/Tokyo' });
 
-// Math that doesn’t hurt your brain
-birthday.add(7, 'day'); // Next week
-birthday.sub(2, 'month'); // Two months back
-birthday.startOf('week'); // Monday morning
-birthday.endOf('month'); // Last second of month
+// Same moment, but different "start of day" depending on the timezone
+console.log(ny.startOf('day').format()); // 2024-05-06T00:00:00-04:00
+console.log(tokyo.startOf('day').format()); // 2024-05-06T00:00:00+09:00
 
-// Get exactly what you need
-birthday.year(); // 2005
-birthday.month(); // 4 (finally, 1-based like humans think!)
-birthday.day(); // 26
+// Formatting automatically uses the instance's locale
+const fr = waktos(timestamp, { locale: 'fr-FR' });
+console.log(fr.format('MMMM')); // "mai"
 ```
 
-## Extend in One Line 🔌
+## Core Features 🚀
 
-Extensible by design:
+### Parsing & Creation
+
+Waktos handles various input formats consistently.
+
+```js
+// Current time
+waktos();
+
+// Parse ISO string
+waktos('2023-05-19T01:02:03+07:00');
+
+// Parse local date (Midnight in the specified/local timezone)
+const birthday = waktos('2005-04-26');
+
+// Parse UTC date (Midnight UTC)
+const utcBirthday = waktos.utc('2005-04-26');
+```
+
+### Intuitive Arithmetic
+
+Perform date math without mutating the original instance.
+
+```js
+const date = waktos('2005-04-26');
+
+const nextWeek = date.add(7, 'day');
+const twoMonthsAgo = date.sub(2, 'month');
+const startOfWeek = date.startOf('week'); // Respects locale's first day of week
+const endOfMonth = date.endOf('month');
+```
+
+## Plugins 🔌
+
+Waktos is extensible by design. Import only what you need.
 
 ```js
 import waktos from 'waktos';
@@ -66,34 +101,33 @@ import businessTime from 'waktos/plugin/businessTime';
 
 waktos.plugin(businessTime);
 
-waktos('2005-04-26').isWeekday(); // true
-waktos('2005-04-26').quarterOfYear(); // Q2
+const date = waktos('2005-04-26');
+console.log(date.isWeekday()); // true
+console.log(date.quarterOfYear()); // 2
 ```
 
-## Format Dates Like a Designer ✨
+## Formatting ✨
+
+Format dates using standard tokens. Waktos leverages `Intl.DateTimeFormat` for accurate localization.
 
 ```js
 const date = waktos('2005-04-26');
 
-// Presets that actually make sense
+// Localized Presets
 date.format('P'); // "04/26/05"
 date.format('PP'); // "Apr 26, 2005"
 date.format('PPP'); // "April 26, 2005"
 date.format('PPPP'); // "Tuesday, April 26, 2005"
 
-// Custom patterns/tokens
+// Custom Patterns
 date.format('YYYY-MM-DD'); // "2005-04-26"
 date.format('[Born on] dddd'); // "Born on Tuesday"
 date.format('h:mm A Z'); // "12:00 AM +07:00"
 ```
 
-> [!NOTE]
->
-> Square brackets [text] keep text literal. No more escaping nightmares.
-
 ## TypeScript Support 💙
 
-Type safety out of the box:
+Waktos is written in TypeScript and provides types out of the box.
 
 ```ts
 import { type DateInput, type Waktos, waktos } from 'waktos';
@@ -105,74 +139,50 @@ const scheduleMeeting = (date: DateInput, duration: number): Waktos => {
 
 ## Environment Support 🌐
 
-- **Node.js**: 18+ (ESM & CommonJS)  
-- **Browsers**: Chrome 85+, Firefox 79+, Safari 14.7+, Edge 85+  
+- **Node.js**: 18+ (ESM & CommonJS)
+- **Browsers**: Modern browsers (Chrome 85+, Firefox 79+, Safari 14+, Edge 85+)
 - **Mobile**: iOS 14.7+, Android 85+
 
-```js
-// Node.js ESM
-import waktos from 'waktos';
-
-// Node.js CommonJS
-const waktos = require('waktos');
-```
-
 > [!NOTE]
->
-> For older environments, use a modern bundler with appropriate polyfills.
+> For legacy environments, ensure appropriate polyfills are available.
 
-## Switch in 2 Minutes 📦
+## Migration Guide 📦
 
 ### From Day.js
 
+Migration is straightforward as Waktos shares a similar API philosophy.
+
 ```diff
--dayjs('2005-04-26').add(1, 'second').toString();
--dayjs('2005-04-26').startOf('month');
-+waktos('2005-04-26').add(1, 'second').toString();
-+waktos('2005-04-26').startOf('month');
+-dayjs('2005-04-26').add(1, 'second');
++waktos('2005-04-26').add(1, 'second');
 ```
 
-- Units are singular (more natural)
-- Better TypeScript support, no extra `@types`
-- Plugins unlock superpowers: `waktos.plugin(...)`
+- **Differences:** Units are singular (e.g., `'day'`, not `'days'`) for consistency.
 
 ### From Native Date
 
+Stop wrestling with mutable state and inconsistent parsing.
+
 ```diff
 -const date = new Date('2005-04-26');
--date.setDate(date.getDate() + 99); // Mutates! 😱
--date.toLocaleDateString('en-US');
-+waktos('2005-04-26').add(99, 'day').toString(); // en-US default
+-date.setDate(date.getDate() + 99); // Mutates original date!
++waktos('2005-04-26').add(99, 'day'); // Returns new instance
 ```
 
-## Quick FAQ 🤔
+## FAQ 🤔
 
-**Q: Why another date library?**  
-A: Because JavaScript dates still suck in 2025, and we refuse to settle.
+**Q: Why another date library?**
+A: To provide a modern, immutable, and lightweight alternative that explicitly handles Timezone and Locale context in every operation, fixing the common pitfalls of the native `Date` object.
 
-**Q: Is it actually 5kb?**  
-A: Yes. Minified + gzipped. We care about bundle size.
+**Q: How does it impact bundle size?**
+A: Minimally. Waktos is modular and tree-shakeable. The core library is ~5kb (minified + gzipped), and you can import only the specific plugins and locales your app needs.
 
-**Q: Any breaking changes when migrating?**  
-A: Minimal. Most stuff just works™.
+**Q: How does it handle Daylight Saving Time (DST)?**
+A: Waktos is DST-aware. Arithmetic operations like `add(1, 'day')` preserve the same local time across DST transitions, while `add(24, 'hour')` follows absolute physical time. This ensures consistent behavior for both business logic and duration calculations.
 
 ---
 
-Life is too short for ugly date code...
-
-```js
-const deadline = waktos('2023-05-18T23:59:59');
-const now = waktos();
-
-if (now.isBefore(deadline, 'day')) {
-  console.log('☕ Still got time for coffee...');
-} else {
-  console.log('🔥 Deadline? What deadline?!');
-}
-```
-
----
-
-Any issues? Missing your locale? Pull requests welcome! 🤝
+**Issues or Feature Requests?**
+Feel free to open an issue or submit a pull request on GitHub. 🤝
 
 > Build faster. Ship cleaner. Don’t waste your waktos.
