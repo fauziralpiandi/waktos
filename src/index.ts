@@ -1352,11 +1352,24 @@ function waktos(
     ? (getLocale(options.locale) ?? defaultLocale)
     : defaultLocale;
 
-  return createInstance(
-    parseInput(timestampOrOptions),
-    resolvedLocale,
-    options?.timezone,
-  );
+  let timestamp = parseInput(timestampOrOptions);
+
+  if (
+    typeof timestampOrOptions === 'string' &&
+    options?.timezone &&
+    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
+  ) {
+    const { year, month, day, hour, minute, second, millisecond } =
+      extractComponents(new Date(timestamp), false);
+
+    timestamp = convertToUtc(
+      [year, month, day, hour, minute, second, millisecond],
+      options.timezone,
+      timestamp,
+    );
+  }
+
+  return createInstance(timestamp, resolvedLocale, options?.timezone);
 }
 
 waktos.isValid = (input: unknown): boolean => {
@@ -1400,13 +1413,21 @@ waktos.utc = (
     ? (getLocale(options.locale) ?? defaultLocale)
     : defaultLocale;
 
-  return createInstance(
-    timestampOrOptions === undefined
-      ? Date.now()
-      : parseInput(timestampOrOptions as DateInput),
-    resolvedLocale,
-    'UTC',
-  );
+  let timestamp: number;
+
+  if (
+    typeof timestampOrOptions === 'string' &&
+    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
+  ) {
+    timestamp = parseInput(`${timestampOrOptions}Z`);
+  } else {
+    timestamp =
+      timestampOrOptions === undefined
+        ? Date.now()
+        : parseInput(timestampOrOptions as DateInput);
+  }
+
+  return createInstance(timestamp, resolvedLocale, 'UTC');
 };
 
 waktos.plugin = (...plugins: Plugin[]): typeof waktos => {
