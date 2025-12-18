@@ -8,8 +8,8 @@ const leapYear = (year: number): boolean =>
 
 /**
  * Parses various date inputs into UTC timestamps. Handles edge cases gracefully.
- * @example parseInput('2005-04-26') // defaults to midnight UTC (2005-04-26T00:00:00Z)
- * @example parseInput('2005-04-26 15:30') // space becomes T separator (2005-04-26T15:30:00Z)
+ * @example parseInput('2005-04-26') // defaults to midnight Local (2005-04-26T00:00:00)
+ * @example parseInput('2005-04-26 15:30') // space becomes T separator (2005-04-26T15:30:00 Local)
  */
 const parseInput = (input: DateInput): number => {
   let result: number;
@@ -36,11 +36,7 @@ const parseInput = (input: DateInput): number => {
       if (/^\d{4}-\d{2}-\d{2}\s/.test(normalized)) {
         normalized = normalized.replace(/^(\d{4}-\d{2}-\d{2})\s+/, '$1T');
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-        normalized += 'T00:00:00Z'; // date-only defaults to midnight UTC
-      }
-
-      if (!/[Z]|[+-]\d{2}/.test(normalized)) {
-        normalized += 'Z'; // when in doubt, add Z
+        normalized += 'T00:00:00'; // date-only defaults to midnight local
       }
 
       result = new Date(normalized).getTime();
@@ -58,7 +54,7 @@ const parseInput = (input: DateInput): number => {
     throw new Error(`Invalid date input: ${String(value)}`);
   }
 
-  return Math.max(0, result); // negative dates break everything
+  return Math.max(0, result);
 };
 
 export type { DateInput };

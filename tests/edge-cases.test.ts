@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import waktos from '..';
+import waktos from 'waktos';
 
 describe('Edge Cases', () => {
   describe('Invalid Input Handling', () => {

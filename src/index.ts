@@ -129,7 +129,7 @@ interface Instance extends State, Internal, Core {}
 
 type Plugin = (constructor: Constructor, waktos: Factory) => void;
 
-const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['hour', 'day']);
+const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['day']);
 const DATE_UNITS = new Set<ArithmeticUnit>(['month', 'year']);
 const COMPONENT_UNITS = new Set<ComponentUnit>([
   'millisecond',
@@ -291,6 +291,9 @@ const extractComponents = (date: Date, isUtc: boolean): DateTimeComponents => {
 const extractUtcComponents = (timestamp: number): DateTimeComponents =>
   extractComponents(new Date(timestamp), true);
 
+const extractLocalComponents = (timestamp: number): DateTimeComponents =>
+  extractComponents(new Date(timestamp), false);
+
 const parseFormatterParts = (
   parts: readonly Intl.DateTimeFormatPart[],
 ): DateTimeComponents => {
@@ -361,6 +364,7 @@ const parseTimezoneComponents = (
   locale: string,
 ): DateTimeComponents => {
   if (isUtcTimezone(timezone)) return extractUtcComponents(timestamp);
+  if (timezone === resolveTimezone) return extractLocalComponents(timestamp);
 
   const key = createCacheKey(timestamp, timezone, locale);
   const cachedFormatter = timezoneCache.get(key);
@@ -392,6 +396,8 @@ const calcTimezoneOffset = (
   locale = defaultLocale.code,
 ): number => {
   if (isUtcTimezone(timezone)) return 0;
+  if (timezone === resolveTimezone)
+    return -new Date(timestamp).getTimezoneOffset(); // fast path for local time
 
   try {
     const { year, month, day, hour, minute, second, millisecond } =
@@ -464,15 +470,7 @@ const convertToUtc = (
   timezone: string,
   contextTimestamp: number,
 ): number => {
-  const [
-    year = 1970,
-    month = 1,
-    day = 1,
-    hour = 0,
-    minute = 0,
-    second = 0,
-    millisecond = 0,
-  ] = values;
+  const [year, month, day, hour, minute, second, millisecond] = values;
   const baseUtcTime = Date.UTC(
     year,
     month - 1,
@@ -1360,11 +1358,24 @@ function waktos(
     ? (getLocale(options.locale) ?? defaultLocale)
     : defaultLocale;
 
-  return createInstance(
-    parseInput(timestampOrOptions),
-    resolvedLocale,
-    options?.timezone,
-  );
+  let timestamp = parseInput(timestampOrOptions);
+
+  if (
+    typeof timestampOrOptions === 'string' &&
+    options?.timezone &&
+    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
+  ) {
+    const { year, month, day, hour, minute, second, millisecond } =
+      extractUtcComponents(parseInput(`${timestampOrOptions}Z`));
+
+    timestamp = convertToUtc(
+      [year, month, day, hour, minute, second, millisecond],
+      options.timezone,
+      timestamp,
+    );
+  }
+
+  return createInstance(timestamp, resolvedLocale, options?.timezone);
 }
 
 waktos.isValid = (input: unknown): boolean => {
@@ -1408,13 +1419,21 @@ waktos.utc = (
     ? (getLocale(options.locale) ?? defaultLocale)
     : defaultLocale;
 
-  return createInstance(
-    timestampOrOptions === undefined
-      ? Date.now()
-      : parseInput(timestampOrOptions as DateInput),
-    resolvedLocale,
-    'UTC',
-  );
+  let timestamp: number;
+
+  if (
+    typeof timestampOrOptions === 'string' &&
+    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
+  ) {
+    timestamp = parseInput(`${timestampOrOptions}Z`);
+  } else {
+    timestamp =
+      timestampOrOptions === undefined
+        ? Date.now()
+        : parseInput(timestampOrOptions as DateInput);
+  }
+
+  return createInstance(timestamp, resolvedLocale, 'UTC');
 };
 
 waktos.plugin = (...plugins: Plugin[]): typeof waktos => {
@@ -1435,9 +1454,8 @@ export type {
   DateInput,
   DateTimeComponents,
   Factory,
-  Internal,
+  Locale,
   Options,
   Plugin,
-  State,
   Waktos,
 };
