@@ -397,7 +397,7 @@ const calcTimezoneOffset = (
 ): number => {
   if (isUtcTimezone(timezone)) return 0;
   if (timezone === resolveTimezone)
-    return new Date(timestamp).getTimezoneOffset(); // fast path for local time
+    return -new Date(timestamp).getTimezoneOffset(); // fast path for local time
 
   try {
     const { year, month, day, hour, minute, second, millisecond } =
@@ -1366,7 +1366,7 @@ function waktos(
     !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
   ) {
     const { year, month, day, hour, minute, second, millisecond } =
-      extractComponents(new Date(timestamp), false);
+      extractUtcComponents(parseInput(`${timestampOrOptions}Z`));
 
     timestamp = convertToUtc(
       [year, month, day, hour, minute, second, millisecond],
