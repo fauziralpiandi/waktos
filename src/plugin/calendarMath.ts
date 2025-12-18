@@ -75,6 +75,11 @@ function calculateWeekOfYear(
   }
 
   const weekNumber = Math.floor((daysSinceJan1 - daysToFirstWeek) / 7) + 1;
+  const weeksInThisYear = calculateWeeksInYear(year);
+
+  if (weekNumber > weeksInThisYear) {
+    return 1;
+  }
 
   return weekNumber;
 }
