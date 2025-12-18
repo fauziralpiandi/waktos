@@ -129,7 +129,7 @@ interface Instance extends State, Internal, Core {}
 
 type Plugin = (constructor: Constructor, waktos: Factory) => void;
 
-const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['hour']);
+const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['day']);
 const DATE_UNITS = new Set<ArithmeticUnit>(['month', 'year']);
 const COMPONENT_UNITS = new Set<ComponentUnit>([
   'millisecond',
