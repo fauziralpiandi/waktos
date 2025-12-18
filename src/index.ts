@@ -291,6 +291,9 @@ const extractComponents = (date: Date, isUtc: boolean): DateTimeComponents => {
 const extractUtcComponents = (timestamp: number): DateTimeComponents =>
   extractComponents(new Date(timestamp), true);
 
+const extractLocalComponents = (timestamp: number): DateTimeComponents =>
+  extractComponents(new Date(timestamp), false);
+
 const parseFormatterParts = (
   parts: readonly Intl.DateTimeFormatPart[],
 ): DateTimeComponents => {
@@ -361,6 +364,7 @@ const parseTimezoneComponents = (
   locale: string,
 ): DateTimeComponents => {
   if (isUtcTimezone(timezone)) return extractUtcComponents(timestamp);
+  if (timezone === resolveTimezone) return extractLocalComponents(timestamp);
 
   const key = createCacheKey(timestamp, timezone, locale);
   const cachedFormatter = timezoneCache.get(key);
@@ -392,6 +396,8 @@ const calcTimezoneOffset = (
   locale = defaultLocale.code,
 ): number => {
   if (isUtcTimezone(timezone)) return 0;
+  if (timezone === resolveTimezone)
+    return new Date(timestamp).getTimezoneOffset(); // fast path for local time
 
   try {
     const { year, month, day, hour, minute, second, millisecond } =
