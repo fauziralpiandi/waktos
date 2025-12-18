@@ -70,11 +70,11 @@ interface Locale {
 }
 
 declare global {
-  var __LOCALE__: Map<string, Locale> | undefined;
+  var __WAKTOS_LOCALE__: Map<string, Locale> | undefined;
 }
 
 interface GlobalWithLocaleMap {
-  __LOCALE__?: Map<string, Locale>;
+  __WAKTOS_LOCALE__?: Map<string, Locale>;
 }
 
 const getGlobalScope = (): GlobalWithLocaleMap => {
@@ -88,9 +88,9 @@ const getGlobalScope = (): GlobalWithLocaleMap => {
 const createLocaleRegistry = (): Map<string, Locale> => {
   const scope = getGlobalScope();
 
-  scope.__LOCALE__ ??= new Map<string, Locale>();
+  scope.__WAKTOS_LOCALE__ ??= new Map<string, Locale>();
 
-  return scope.__LOCALE__;
+  return scope.__WAKTOS_LOCALE__;
 };
 
 const LOCALE_REGISTRY = createLocaleRegistry();
@@ -107,7 +107,7 @@ const addLocale = (locale: Locale): void => {
  * Handles fallbacks and ensures consistent casing.
  */
 const normalizeLocaleCode = (code: string | null | undefined): string => {
-  const [language = 'en', region] = (code ?? 'en-US').split('-', 2);
+  const [language, region] = (code ?? 'en-US').split('-', 2);
   const lowerLanguage = language.toLowerCase();
 
   return region ? `${lowerLanguage}-${region.toUpperCase()}` : lowerLanguage;
