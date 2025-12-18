@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import waktos from '..';
+import waktos from 'waktos';
 
 const DATE = '2005-04-26T12:30:45.123Z'; // Reference date from documentation
 
