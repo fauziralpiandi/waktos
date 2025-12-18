@@ -129,7 +129,7 @@ interface Instance extends State, Internal, Core {}
 
 type Plugin = (constructor: Constructor, waktos: Factory) => void;
 
-const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['hour', 'day']);
+const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['hour']);
 const DATE_UNITS = new Set<ArithmeticUnit>(['month', 'year']);
 const COMPONENT_UNITS = new Set<ComponentUnit>([
   'millisecond',
@@ -464,15 +464,7 @@ const convertToUtc = (
   timezone: string,
   contextTimestamp: number,
 ): number => {
-  const [
-    year = 1970,
-    month = 1,
-    day = 1,
-    hour = 0,
-    minute = 0,
-    second = 0,
-    millisecond = 0,
-  ] = values;
+  const [year, month, day, hour, minute, second, millisecond] = values;
   const baseUtcTime = Date.UTC(
     year,
     month - 1,
@@ -1435,9 +1427,8 @@ export type {
   DateInput,
   DateTimeComponents,
   Factory,
-  Internal,
+  Locale,
   Options,
   Plugin,
-  State,
   Waktos,
 };
