@@ -1,8 +1,8 @@
-import defaultLocale from './locale/en-us';
-import { type Locale, getLocale } from './locale';
-import { type DateInput, leapYear, parseInput } from './utils';
-import { MILLISECOND, TIME_UNITS } from './constants';
 import { Cache } from './cache';
+import { MILLISECOND, TIME_UNITS } from './constants';
+import { getLocale, type Locale } from './locale';
+import defaultLocale from './locale/en-us';
+import { type DateInput, leapYear, parseInput } from './utils';
 
 interface DateTimeComponents {
   year: number;
@@ -22,11 +22,6 @@ type ComponentUnit = TimeUnit | DateUnit;
 type ArithmeticUnit = TimeUnit | DateUnit | DerivedUnit;
 type BoundaryUnit = Exclude<TimeUnit, 'millisecond'> | DateUnit | DerivedUnit;
 type ComparisonUnit = TimeUnit | DateUnit | DerivedUnit | undefined;
-
-interface Options {
-  locale?: string;
-  timezone?: string;
-}
 
 interface CacheState {
   readonly timestamp: number;
@@ -108,6 +103,10 @@ interface Core {
 
   format(pattern?: string): string;
 
+  locale(code: string): Waktos;
+  timezone(zone: string): Waktos;
+  tz(zone: string): Waktos; // alias of timezone()
+
   isBefore(date: DateInput, unit?: ComparisonUnit): boolean;
   isAfter(date: DateInput, unit?: ComparisonUnit): boolean;
   isSame(date: DateInput, unit?: ComparisonUnit): boolean;
@@ -151,7 +150,7 @@ const BOUNDARY_UNITS = new Set<BoundaryUnit>([
 ]);
 const INTL_FORMAT_CONFIG = Object.freeze({
   hour12: false,
-  timeZone: '', // filled dynamically
+  timeZone: '',
   calendar: 'gregory',
   numberingSystem: 'latn',
   year: 'numeric',
@@ -162,29 +161,25 @@ const INTL_FORMAT_CONFIG = Object.freeze({
   second: '2-digit',
   fractionalSecondDigits: 3, // precision ftw
 } as const);
-const REGEX = Object.freeze({
-  LITERAL: /\[([^\]]+)\]/g, // matches bracketed literal text in patterns
-  PATTERN: /\b(?:PPPP|PPP|PP|CCCC|CCC|CC|P|C)\b/g, // predefined format patterns
-  TOKEN:
-    /\[([^\]]+)\]|(?:YYYY|MMMM|MMM|MM|Do|DD|dddd|ZZ|YY|SSS|\b(?:HH|H|hh|h|mm|m|ss|s|M|ddd|D|A|a|Z)\b)/g,
-});
+const TOKEN_REGEX =
+  /\[([^\]]+)\]|(?:YYYY|YY|MMMM|MMM|MM|M|Do|DD|D|dddd|ddd|HH|H|hh|h|mm|m|ss|s|SSS|A|a|ZZ|Z)/g;
 
 const systemTimezone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch {
-    return 'UTC'; // when in doubt, UTC it out
+    return 'UTC';
   }
 };
 
 const resolveTimezone = systemTimezone();
 
 const isUtcTimezone = (timezone?: string): boolean =>
-  !timezone || timezone === 'UTC'; // default mood
+  !timezone || timezone === 'UTC';
 
 const createCacheKey = (...parts: readonly (string | number)[]): string => {
   return parts
-    .map(part => String(part).replace(/\$/g, '\\$')) // escape $ char to prevent collisions
+    .map((part) => String(part).replaceAll('$', String.raw`\$`)) // escape $ char to prevent collisions
     .join('$');
 };
 
@@ -197,12 +192,22 @@ const isCacheValid = (
   cache !== null &&
   cache.timestamp === timestamp &&
   cache.timezone === timezone &&
-  cache.locale === locale; // picky cache is picky
+  cache.locale === locale;
 
 const initCacheState = (): CacheEntry => null;
 
 const formatterCache = new Cache<string, Intl.DateTimeFormat>(50);
-const timezoneCache = new Cache<string, DateTimeComponents>(200);
+// approx 20 days per timezone with 15-mins chunks)
+const offsetCache = new Cache<string, number>(2000);
+
+type Formatter = (
+  nums: DateTimeComponents,
+  locale: Locale,
+  timestamp: number,
+  timezone: string,
+) => string;
+
+const compiledFormatterCache = new Cache<string, Formatter[]>(200);
 
 const createInstance = (
   timestamp: number,
@@ -211,9 +216,8 @@ const createInstance = (
 ): Waktos => {
   const instance = Object.create(core) as Instance;
   const resolvedTimezone = timezone ?? resolveTimezone;
-  const safeTimestamp = Math.max(0, timestamp);
   const result = Object.assign(instance, {
-    _timestamp: safeTimestamp,
+    _timestamp: timestamp,
     _locale: locale,
     _timezone: resolvedTimezone,
     _cache: initCacheState(),
@@ -308,54 +312,81 @@ const parseFormatterParts = (
   };
 
   for (const { type, value } of parts) {
-    const numericValue = parseInt(value, 10);
+    const numericValue = Number.parseInt(value, 10);
 
     if (Number.isNaN(numericValue)) continue;
 
     switch (type) {
-      case 'year':
+      case 'year': {
         result.year = numericValue;
         break;
+      }
 
-      case 'month':
+      case 'month': {
         result.month = numericValue;
         break;
+      }
 
-      case 'day':
+      case 'day': {
         result.day = numericValue;
         break;
+      }
 
-      case 'hour':
+      case 'hour': {
         result.hour = numericValue === 24 ? 0 : numericValue; // normalize 24h to 0h for consistency
         break;
+      }
 
-      case 'minute':
+      case 'minute': {
         result.minute = numericValue;
         break;
+      }
 
-      case 'second':
+      case 'second': {
         result.second = numericValue;
         break;
+      }
 
-      default:
+      default: {
         if (
           type === 'fractionalSecond' ||
           type.startsWith('fractionalSecond')
         ) {
-          // milliseconds can be 1-3 digits, we normalize to 3
           const padded =
             value.length < 3 ? value.padEnd(3, '0') : value.slice(0, 3);
-          const millisecondValue = parseInt(padded, 10);
+          const millisecondValue = Number.parseInt(padded, 10);
 
           result.millisecond = Number.isNaN(millisecondValue)
             ? 0
             : millisecondValue;
         }
         break;
+      }
     }
   }
 
   return result;
+};
+
+const extractIntlComponents = (
+  timestamp: number,
+  timezone: string,
+  locale: string,
+): DateTimeComponents => {
+  try {
+    const parts = createDateFormatter(locale, timezone).formatToParts(
+      new Date(timestamp),
+    );
+    const parsedComponents = parseFormatterParts(parts);
+
+    parsedComponents.millisecond =
+      ((timestamp % MILLISECOND.SECOND) + MILLISECOND.SECOND) %
+      MILLISECOND.SECOND;
+
+    return parsedComponents;
+  } catch {
+    return extractUtcComponents(timestamp);
+  }
 };
 
 const parseTimezoneComponents = (
@@ -366,30 +397,36 @@ const parseTimezoneComponents = (
   if (isUtcTimezone(timezone)) return extractUtcComponents(timestamp);
   if (timezone === resolveTimezone) return extractLocalComponents(timestamp);
 
-  const key = createCacheKey(timestamp, timezone, locale);
-  const cachedFormatter = timezoneCache.get(key);
+  const chunkId = Math.floor(timestamp / (15 * MILLISECOND.MINUTE));
+  const cacheKey = `${timezone}$${String(chunkId)}`;
+  const cachedOffset = offsetCache.get(cacheKey);
 
-  if (cachedFormatter !== undefined) return cachedFormatter;
-
-  try {
-    const parts = createDateFormatter(locale, timezone).formatToParts(
-      new Date(timestamp),
-    );
-    const parsedComponents = parseFormatterParts(parts);
-
-    parsedComponents.millisecond = timestamp % MILLISECOND.SECOND; // keep the microseconds happy
-    timezoneCache.set(key, parsedComponents);
-
-    return parsedComponents;
-  } catch {
-    return extractUtcComponents(timestamp);
+  if (cachedOffset !== undefined) {
+    return extractUtcComponents(timestamp + cachedOffset);
   }
+
+  // cache miss: calculate offset using Intl path
+  const components = extractIntlComponents(timestamp, timezone, locale);
+  // calculate offset
+  const utcRepresentation = Date.UTC(
+    components.year,
+    components.month - 1,
+    components.day,
+    components.hour,
+    components.minute,
+    components.second,
+    components.millisecond,
+  );
+
+  // calculate offset by comparing the "wall time" (constructed as UTC) with the actual timestamp.
+  // we preserve millisecond precision to ensure accuracy, avoiding rounding issues.
+  const offset = utcRepresentation - timestamp;
+
+  offsetCache.set(cacheKey, offset);
+
+  return components;
 };
 
-/**
- * Calculate timezone offset in minutes. Handles DST transitions gracefully.
- * @example calcTimezoneOffset(Date.now(), 'America/New_York') // -300 or -240
- */
 const calcTimezoneOffset = (
   timestamp: number,
   timezone: string,
@@ -416,16 +453,13 @@ const calcTimezoneOffset = (
     const offsetMs = utcTime - truncatedTimestamp;
     const offsetMinutes = offsetMs / MILLISECOND.MINUTE;
 
-    return Math.round(offsetMinutes * 4) / 4; // some timezones have 15-mins offsets (e.g. Nepal, Chatham)
+    // some timezones have 15-mins offsets (e.g. Nepal, Chatham)
+    return Math.round(offsetMinutes * 4) / 4;
   } catch {
-    return 0; // shrug, must be UTC
+    return 0;
   }
 };
 
-/**
- * Corrects timezone offset during DST transitions using iterative refinement.
- * Returns [correctedUtcTime, finalOffset] - the heart of timezone magic.
- */
 const correctTimezoneOffset = (
   local: number,
   offsetEstimate: number,
@@ -461,7 +495,7 @@ const correctTimezoneOffset = (
 
     return [local - finalOffset * MILLISECOND.MINUTE, finalOffset];
   } catch {
-    return [local, offsetEstimate]; // better to be roughly right than precisely wrong
+    return [local, offsetEstimate];
   }
 };
 
@@ -499,10 +533,6 @@ const convertToUtc = (
 const calcDayOfWeek = (year: number, month: number, day: number): number =>
   new Date(year, month - 1, day).getDay();
 
-/**
- * Calculates week start/end boundaries respecting locale week start.
- * Handles timezone conversions and cross-day transitions.
- */
 const calcWeekBoundary = (
   timestamp: number,
   locale: Locale,
@@ -516,16 +546,8 @@ const calcWeekBoundary = (
   );
   const currentDayOfWeek = calcDayOfWeek(year, month, day);
   const weekStart = locale.calendar.weekStart ?? 1; // monday (ISO 8601 standard)
-  const daysFromWeekStart = (currentDayOfWeek - weekStart + 7) % 7; // +7 prevents negative modulo
-
-  let offsetDays: number;
-
-  if (isEnd) {
-    offsetDays = 6 - daysFromWeekStart;
-  } else {
-    offsetDays = -daysFromWeekStart;
-  }
-
+  const daysFromWeekStart = (currentDayOfWeek - weekStart + 7) % 7; // prevents negative modulo
+  const offsetDays = isEnd ? 6 - daysFromWeekStart : -daysFromWeekStart;
   const baseDate = new Date(year, month - 1, day);
 
   baseDate.setDate(baseDate.getDate() + offsetDays);
@@ -554,40 +576,47 @@ const setDateField = (
   isUtc: boolean,
 ): void => {
   switch (field) {
-    case 'year':
+    case 'year': {
       if (isUtc) date.setUTCFullYear(value);
       else date.setFullYear(value);
       break;
+    }
 
-    case 'month':
+    case 'month': {
       if (isUtc) date.setUTCMonth(value - 1);
       else date.setMonth(value - 1);
       break;
+    }
 
-    case 'day':
+    case 'day': {
       if (isUtc) date.setUTCDate(value);
       else date.setDate(value);
       break;
+    }
 
-    case 'hour':
+    case 'hour': {
       if (isUtc) date.setUTCHours(value);
       else date.setHours(value);
       break;
+    }
 
-    case 'minute':
+    case 'minute': {
       if (isUtc) date.setUTCMinutes(value);
       else date.setMinutes(value);
       break;
+    }
 
-    case 'second':
+    case 'second': {
       if (isUtc) date.setUTCSeconds(value);
       else date.setSeconds(value);
       break;
+    }
 
-    case 'millisecond':
+    case 'millisecond': {
       if (isUtc) date.setUTCMilliseconds(value);
       else date.setMilliseconds(value);
       break;
+    }
   }
 };
 
@@ -662,27 +691,31 @@ const calcBoundaryTimestamp = (
   const components = [year, month, day, hour, minute, second, millisecond];
 
   switch (unit) {
-    case 'second':
+    case 'second': {
       components[6] = end ? 999 : 0;
       break;
+    }
 
-    case 'minute':
+    case 'minute': {
       components[5] = end ? 59 : 0;
       components[6] = end ? 999 : 0;
       break;
+    }
 
-    case 'hour':
+    case 'hour': {
       components[4] = end ? 59 : 0;
       components[5] = end ? 59 : 0;
       components[6] = end ? 999 : 0;
       break;
+    }
 
-    case 'day':
+    case 'day': {
       components[3] = end ? 23 : 0;
       components[4] = end ? 59 : 0;
       components[5] = end ? 59 : 0;
       components[6] = end ? 999 : 0;
       break;
+    }
 
     case 'month': {
       components[2] = end ? calcLastDayOfMonth(year, month) : 1;
@@ -693,7 +726,7 @@ const calcBoundaryTimestamp = (
       break;
     }
 
-    case 'year':
+    case 'year': {
       components[1] = end ? 12 : 1;
       components[2] = end ? calcLastDayOfMonth(year, 12) : 1;
       components[3] = end ? 23 : 0;
@@ -701,9 +734,11 @@ const calcBoundaryTimestamp = (
       components[5] = end ? 59 : 0;
       components[6] = end ? 999 : 0;
       break;
+    }
 
-    default:
+    default: {
       return timestamp;
+    }
   }
 
   try {
@@ -782,94 +817,172 @@ const formatTimezoneOffset = (offset: number, z = false): string => {
   const minutes = (absOffset % 60).toString().padStart(2, '0');
 
   return z
-    ? `GMT${sign}${hours}:${minutes}` // GMT format (human-readable)
-    : `${sign}${hours}:${minutes}`; // ISO 8601 (machine-readable)
+    ? `GMT${sign}${hours}:${minutes}` // human-readable
+    : `${sign}${hours}:${minutes}`; // machine-readable
 };
 
-const buildFormatPatterns = (locale: Locale): Record<string, string> => ({
-  ...locale.format.patterns.date,
-  ...locale.format.patterns.time,
-});
+const formatNumber = (n: number, pad = 0): string =>
+  String(n).padStart(pad, '0');
 
-const parsePattern = (pattern: string, locale: Locale): string => {
-  const patternMap = buildFormatPatterns(locale);
-  const literalRegex = new RegExp(REGEX.LITERAL.source, 'g');
-  const patternRegex = new RegExp(REGEX.PATTERN.source, 'g');
-  const replaceTokens = (text: string): string => {
-    patternRegex.lastIndex = 0;
+const compilePattern = (pattern: string, locale: Locale): Formatter[] => {
+  const parts: Formatter[] = [];
 
-    return text.replace(patternRegex, token => patternMap[token] ?? token);
-  };
-  const parts: string[] = [];
-
-  let currentPos = 0;
+  let lastIndex = 0;
   let match;
 
-  literalRegex.lastIndex = 0;
+  TOKEN_REGEX.lastIndex = 0;
 
-  while ((match = literalRegex.exec(pattern)) !== null) {
-    const beforeLiteral = pattern.slice(currentPos, match.index);
+  while ((match = TOKEN_REGEX.exec(pattern)) !== null) {
+    if (match.index > lastIndex) {
+      const staticText = pattern.slice(lastIndex, match.index);
 
-    if (beforeLiteral) parts.push(replaceTokens(beforeLiteral));
+      parts.push(() => staticText);
+    }
 
-    parts.push(match[0]);
-    currentPos = literalRegex.lastIndex;
+    const token = match[0];
+    const literal = match[1];
+
+    if (literal) {
+      parts.push(() => literal);
+    } else {
+      switch (token) {
+        case 'YYYY': {
+          parts.push((nums) => formatNumber(nums.year, 4));
+          break;
+        }
+        case 'YY': {
+          parts.push((nums) => String(nums.year).slice(-2));
+          break;
+        }
+        case 'MMMM': {
+          parts.push(
+            (nums) => locale.calendar.labels.months.full[nums.month - 1] ?? '',
+          );
+          break;
+        }
+        case 'MMM': {
+          parts.push(
+            (nums) => locale.calendar.labels.months.abbr[nums.month - 1] ?? '',
+          );
+          break;
+        }
+        case 'MM': {
+          parts.push((nums) => formatNumber(nums.month, 2));
+          break;
+        }
+        case 'M': {
+          parts.push((nums) => formatNumber(nums.month));
+          break;
+        }
+        case 'Do': {
+          parts.push(
+            (nums) =>
+              locale.format.ordinal?.(formatNumber(nums.day)) ??
+              formatNumber(nums.day),
+          );
+          break;
+        }
+        case 'DD': {
+          parts.push((nums) => formatNumber(nums.day, 2));
+          break;
+        }
+        case 'D': {
+          parts.push((nums) => formatNumber(nums.day));
+          break;
+        }
+        case 'dddd': {
+          parts.push(
+            (nums) =>
+              locale.calendar.labels.weekdays.full[
+                calcDayOfWeek(nums.year, nums.month, nums.day)
+              ] ?? '',
+          );
+          break;
+        }
+        case 'ddd': {
+          parts.push(
+            (nums) =>
+              locale.calendar.labels.weekdays.abbr[
+                calcDayOfWeek(nums.year, nums.month, nums.day)
+              ] ?? '',
+          );
+          break;
+        }
+        case 'HH': {
+          parts.push((nums) => formatNumber(nums.hour, 2));
+          break;
+        }
+        case 'H': {
+          parts.push((nums) => formatNumber(nums.hour));
+          break;
+        }
+        case 'hh': {
+          parts.push((nums) => {
+            const h = nums.hour % 12 || 12;
+
+            return formatNumber(h, 2);
+          });
+          break;
+        }
+        case 'h': {
+          parts.push((nums) => formatNumber(nums.hour % 12 || 12));
+          break;
+        }
+        case 'mm': {
+          parts.push((nums) => formatNumber(nums.minute, 2));
+          break;
+        }
+        case 'm': {
+          parts.push((nums) => formatNumber(nums.minute));
+          break;
+        }
+        case 'ss': {
+          parts.push((nums) => formatNumber(nums.second, 2));
+          break;
+        }
+        case 's': {
+          parts.push((nums) => formatNumber(nums.second));
+          break;
+        }
+        case 'SSS': {
+          parts.push((nums) => formatNumber(nums.millisecond, 3));
+          break;
+        }
+        case 'A': {
+          parts.push((nums) => (nums.hour >= 12 ? 'PM' : 'AM'));
+          break;
+        }
+        case 'a': {
+          parts.push((nums) => (nums.hour >= 12 ? 'pm' : 'am'));
+          break;
+        }
+        case 'ZZ':
+        case 'Z': {
+          const isZZ = token === 'ZZ';
+
+          parts.push((_nums, _locale, ts, tz) => {
+            const offset = calcTimezoneOffset(ts, tz, _locale.code);
+
+            return formatTimezoneOffset(offset, isZZ);
+          });
+          break;
+        }
+        default: {
+          parts.push(() => token);
+        }
+      }
+    }
+
+    lastIndex = TOKEN_REGEX.lastIndex;
   }
 
-  const remainingText = pattern.slice(currentPos);
+  if (lastIndex < pattern.length) {
+    const tail = pattern.slice(lastIndex);
 
-  if (remainingText) parts.push(replaceTokens(remainingText));
+    parts.push(() => tail);
+  }
 
-  return parts.join('') || pattern;
-};
-
-/**
- * Creates token replacement functions for date formatting.
- * Maps tokens like YYYY, MM, DD to their localized string values.
- */
-const createTokenReplacers = (
-  locale: Locale,
-  timestamp: number,
-  resolvedTimezone: string,
-  nums: DateTimeComponents,
-): Record<string, () => string> => {
-  const formatNumber = (value: number, pad?: number): string => {
-    const str = pad ? String(value).padStart(pad, '0') : String(value);
-
-    return locale.format.numeral?.(str) ?? str;
-  };
-  const hour12 =
-    nums.hour === 0 ? 12 : nums.hour > 12 ? nums.hour - 12 : nums.hour;
-  const dayOfWeek = calcDayOfWeek(nums.year, nums.month, nums.day);
-  const offset = calcTimezoneOffset(timestamp, resolvedTimezone, locale.code);
-
-  return {
-    YYYY: () => formatNumber(nums.year),
-    YY: () => formatNumber(nums.year % 100, 2),
-    MMMM: () => locale.calendar.labels.months.full[nums.month - 1] ?? '',
-    MMM: () => locale.calendar.labels.months.abbr[nums.month - 1] ?? '',
-    MM: () => formatNumber(nums.month, 2),
-    M: () => formatNumber(nums.month),
-    dddd: () => locale.calendar.labels.weekdays.full[dayOfWeek] ?? '',
-    ddd: () => locale.calendar.labels.weekdays.abbr[dayOfWeek] ?? '',
-    Do: () =>
-      locale.format.ordinal?.(formatNumber(nums.day)) ?? formatNumber(nums.day),
-    DD: () => formatNumber(nums.day, 2),
-    D: () => formatNumber(nums.day),
-    HH: () => formatNumber(nums.hour, 2),
-    H: () => formatNumber(nums.hour),
-    hh: () => formatNumber(hour12, 2),
-    h: () => formatNumber(hour12),
-    mm: () => formatNumber(nums.minute, 2),
-    m: () => formatNumber(nums.minute),
-    ss: () => formatNumber(nums.second, 2),
-    s: () => formatNumber(nums.second),
-    SSS: () => formatNumber(nums.millisecond, 3),
-    A: () => (nums.hour >= 12 ? 'PM' : 'AM'),
-    a: () => (nums.hour >= 12 ? 'pm' : 'am'),
-    Z: () => formatTimezoneOffset(offset, false),
-    ZZ: () => formatTimezoneOffset(offset, true),
-  };
+  return parts;
 };
 
 const formatByPattern = (
@@ -878,15 +991,14 @@ const formatByPattern = (
   timezone?: string,
   pattern?: string,
 ): string => {
-  let token = pattern ?? locale.format.patterns.default;
+  const finalPattern = pattern ?? locale.format.patterns.default;
+  const cacheKey = createCacheKey(locale.code, finalPattern);
 
-  const patternMap = buildFormatPatterns(locale);
-  const mappedPattern = patternMap[token];
+  let formatters = compiledFormatterCache.get(cacheKey);
 
-  if (mappedPattern) {
-    token = mappedPattern;
-  } else {
-    token = parsePattern(token, locale);
+  if (!formatters) {
+    formatters = compilePattern(finalPattern, locale);
+    compiledFormatterCache.set(cacheKey, formatters);
   }
 
   const resolvedTimezone = timezone ?? resolveTimezone;
@@ -894,24 +1006,18 @@ const formatByPattern = (
   const nums = isUtc
     ? extractUtcComponents(timestamp)
     : parseTimezoneComponents(timestamp, resolvedTimezone, locale.code);
-  const replacers = createTokenReplacers(
-    locale,
-    timestamp,
-    resolvedTimezone,
-    nums,
-  );
 
-  REGEX.LITERAL.lastIndex = 0;
+  let result = ''; // fast path execution
 
-  const formatted = token.replace(REGEX.TOKEN, (match, literal) => {
-    if (literal) return String(literal);
+  for (const formatter of formatters) {
+    result += formatter(nums, locale, timestamp, resolvedTimezone);
+  }
 
-    const replacer = replacers[match];
+  const finalResult = locale.format.numeral
+    ? locale.format.numeral(result)
+    : result;
 
-    return typeof replacer === 'function' ? replacer() : match;
-  });
-
-  return locale.rtl ? `\u202B${formatted}\u202C` : formatted;
+  return locale.rtl ? `\u202B${finalResult}\u202C` : finalResult;
 };
 
 const core = {
@@ -1030,21 +1136,25 @@ const core = {
     );
 
     switch (unit) {
-      case 'hour':
+      case 'hour': {
         local.setHours(hour + value);
         break;
+      }
 
-      case 'day':
+      case 'day': {
         local.setDate(day + value);
         break;
+      }
 
-      case 'month':
+      case 'month': {
         this._adjustDate(local, value, 'month', false);
         break;
+      }
 
-      case 'year':
+      case 'year': {
         this._adjustDate(local, value, 'year', false);
         break;
+      }
     }
 
     const localComponents = [
@@ -1121,11 +1231,11 @@ const core = {
   },
 
   toDateString(): string {
-    return this.format(this._locale.format.patterns.date.PPPP);
+    return this.format('ddd MMM DD YYYY');
   },
 
   toTimeString(): string {
-    return this.format(this._locale.format.patterns.time.CCCC);
+    return this.format('HH:mm:ss ZZ');
   },
 
   toObject(): DateTimeComponents {
@@ -1151,6 +1261,20 @@ const core = {
       this._timezone,
       pattern,
     );
+  },
+
+  locale(code: string): Waktos {
+    const resolvedLocale = getLocale(code) ?? defaultLocale;
+
+    return createInstance(this._timestamp, resolvedLocale, this._timezone);
+  },
+
+  timezone(zone: string): Waktos {
+    return createInstance(this._timestamp, this._locale, zone);
+  },
+
+  tz(zone: string): Waktos {
+    return this.timezone(zone);
   },
 
   year(value?: number) {
@@ -1306,76 +1430,13 @@ const core = {
   },
 };
 
-const isOptionsOnly = (input: unknown): input is Options => {
-  if (
-    input === null ||
-    typeof input !== 'object' ||
-    Array.isArray(input) ||
-    input instanceof Date
-  ) {
-    return false;
-  }
-
-  if (
-    'valueOf' in input &&
-    typeof input.valueOf === 'function' &&
-    input.valueOf !== Object.prototype.valueOf
-  ) {
-    return false;
-  }
-
-  const obj = input as Record<string, unknown>;
-
-  return (
-    ('locale' in obj && typeof obj.locale === 'string') ||
-    ('timezone' in obj && typeof obj.timezone === 'string')
-  );
-};
-
-function waktos(
-  timestampOrOptions?: DateInput | Options,
-  options?: Options,
-): Waktos;
-function waktos(
-  timestampOrOptions?: DateInput | Options,
-  options?: Options,
-): Waktos {
-  if (timestampOrOptions === undefined)
+function waktos(date?: DateInput): Waktos {
+  if (date === undefined)
     return createInstance(Date.now(), defaultLocale, undefined);
-  if (isOptionsOnly(timestampOrOptions)) {
-    const resolvedLocale = timestampOrOptions.locale
-      ? (getLocale(timestampOrOptions.locale) ?? defaultLocale)
-      : defaultLocale;
 
-    return createInstance(
-      Date.now(),
-      resolvedLocale,
-      timestampOrOptions.timezone,
-    );
-  }
+  const timestamp = parseInput(date);
 
-  const resolvedLocale = options?.locale
-    ? (getLocale(options.locale) ?? defaultLocale)
-    : defaultLocale;
-
-  let timestamp = parseInput(timestampOrOptions);
-
-  if (
-    typeof timestampOrOptions === 'string' &&
-    options?.timezone &&
-    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
-  ) {
-    const { year, month, day, hour, minute, second, millisecond } =
-      extractUtcComponents(parseInput(`${timestampOrOptions}Z`));
-
-    timestamp = convertToUtc(
-      [year, month, day, hour, minute, second, millisecond],
-      options.timezone,
-      timestamp,
-    );
-  }
-
-  return createInstance(timestamp, resolvedLocale, options?.timezone);
+  return createInstance(timestamp, defaultLocale, undefined);
 }
 
 waktos.isValid = (input: unknown): boolean => {
@@ -1390,56 +1451,30 @@ waktos.isValid = (input: unknown): boolean => {
   }
 };
 
-waktos.unix = (timestamp: number, options?: Options): Waktos => {
-  const resolvedLocale = options?.locale
-    ? (getLocale(options.locale) ?? defaultLocale)
-    : defaultLocale;
-  const clampedTimestamp = Math.max(0, timestamp);
-
+waktos.unix = (timestamp: number): Waktos => {
   return createInstance(
-    clampedTimestamp * MILLISECOND.SECOND,
-    resolvedLocale,
-    options?.timezone,
+    timestamp * MILLISECOND.SECOND,
+    defaultLocale,
+    undefined,
   );
 };
 
-waktos.utc = (
-  timestampOrOptions?: DateInput | Omit<Options, 'timezone'>,
-  options?: Omit<Options, 'timezone'>,
-): Waktos => {
-  if (timestampOrOptions !== undefined && isOptionsOnly(timestampOrOptions)) {
-    const resolvedLocale = timestampOrOptions.locale
-      ? (getLocale(timestampOrOptions.locale) ?? defaultLocale)
-      : defaultLocale;
-
-    return createInstance(Date.now(), resolvedLocale, 'UTC');
-  }
-
-  const resolvedLocale = options?.locale
-    ? (getLocale(options.locale) ?? defaultLocale)
-    : defaultLocale;
-
+waktos.utc = (date?: DateInput): Waktos => {
   let timestamp: number;
 
-  if (
-    typeof timestampOrOptions === 'string' &&
-    !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(timestampOrOptions)
-  ) {
-    timestamp = parseInput(`${timestampOrOptions}Z`);
+  if (typeof date === 'string' && !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(date)) {
+    timestamp = parseInput(`${date}Z`);
   } else {
-    timestamp =
-      timestampOrOptions === undefined
-        ? Date.now()
-        : parseInput(timestampOrOptions as DateInput);
+    timestamp = date === undefined ? Date.now() : parseInput(date);
   }
 
-  return createInstance(timestamp, resolvedLocale, 'UTC');
+  return createInstance(timestamp, defaultLocale, 'UTC');
 };
 
 waktos.plugin = (...plugins: Plugin[]): typeof waktos => {
-  plugins.forEach(plugin => {
+  for (const plugin of plugins) {
     plugin({ prototype: core }, { ...waktos, createInstance });
-  });
+  }
 
   return waktos;
 };
@@ -1448,14 +1483,14 @@ export default waktos;
 export type {
   ArithmeticUnit,
   BoundaryUnit,
-  ComponentUnit,
   ComparisonUnit,
+  ComponentUnit,
   Constructor,
-  DateInput,
   DateTimeComponents,
   Factory,
-  Locale,
-  Options,
   Plugin,
   Waktos,
 };
+
+export { type Locale } from './locale';
+export { type DateInput } from './utils';
