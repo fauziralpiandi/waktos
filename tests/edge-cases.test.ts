@@ -85,9 +85,9 @@ describe('Edge Cases', () => {
 
     test('DST transition boundaries', () => {
       // Spring DST transition (2am becomes 3am)
-      const springDST = waktos('2005-03-27T01:30:00.000Z', {
-        timezone: 'Europe/London',
-      });
+      const springDST = waktos('2005-03-27T01:30:00.000Z').timezone(
+        'Europe/London',
+      );
       const startOfDay = springDST.startOf('day');
       const endOfDay = springDST.endOf('day');
 
@@ -101,8 +101,8 @@ describe('Edge Cases', () => {
       const startOfYear = earlyDate.startOf('year');
       const endOfYear = earlyDate.endOf('year');
 
-      expect(startOfYear.year()).toBe(1970); // JavaScript Date limitation
-      expect(endOfYear.year()).toBe(1970);
+      expect(startOfYear.year()).toBe(1900);
+      expect(endOfYear.year()).toBe(1900);
       expect(endOfYear.month()).toBe(12);
     });
 
@@ -119,18 +119,16 @@ describe('Edge Cases', () => {
   describe('Timezone Edge Cases', () => {
     test('invalid timezone handling', () => {
       expect(() =>
-        waktos('2005-04-26', { timezone: 'Invalid/Timezone' }),
+        waktos('2005-04-26').timezone('Invalid/Timezone'),
       ).not.toThrow();
-      expect(() =>
-        waktos('2005-04-26', { timezone: 'Mars/Colony' }),
-      ).not.toThrow();
+      expect(() => waktos('2005-04-26').timezone('Mars/Colony')).not.toThrow();
     });
 
     test('DST transition ambiguous times', () => {
       // Fall DST: 2am happens twice
-      const fallDST = waktos('2005-10-30T01:30:00.000Z', {
-        timezone: 'Europe/London',
-      });
+      const fallDST = waktos('2005-10-30T01:30:00.000Z').timezone(
+        'Europe/London',
+      );
 
       expect(fallDST.hour()).toBeGreaterThanOrEqual(0);
       expect(fallDST.hour()).toBeLessThan(24);
@@ -138,15 +136,15 @@ describe('Edge Cases', () => {
 
     test('extreme timezone offsets', () => {
       const utc = waktos('2005-04-26T12:00:00.000Z');
-      const pacific = waktos('2005-04-26T12:00:00.000Z', {
-        timezone: 'Pacific/Kiritimati',
-      }); // UTC+14
+      const pacific = waktos('2005-04-26T12:00:00.000Z').timezone(
+        'Pacific/Kiritimati',
+      ); // UTC+14
 
       expect(pacific.valueOf()).toBe(utc.valueOf()); // Same instant
     });
 
     test('timezone with invalid date', () => {
-      expect(() => waktos('invalid', { timezone: 'Asia/Tokyo' })).toThrow();
+      expect(() => waktos('invalid').timezone('Asia/Tokyo')).toThrow();
     });
   });
 
@@ -198,30 +196,6 @@ describe('Edge Cases', () => {
     });
   });
 
-  describe('Options Validation Edge Cases', () => {
-    test('malformed options object', () => {
-      expect(() => waktos('2005-04-26', null as any)).not.toThrow();
-      expect(() => waktos('2005-04-26', 'invalid' as any)).not.toThrow();
-      expect(() => waktos('2005-04-26', 123 as any)).not.toThrow();
-    });
-
-    test('invalid locale handling', () => {
-      expect(() =>
-        waktos('2005-04-26', { locale: 'invalid-locale' }),
-      ).not.toThrow();
-      expect(() => waktos('2005-04-26', { locale: null as any })).not.toThrow();
-    });
-
-    test('mixed valid/invalid options', () => {
-      expect(() =>
-        waktos('2005-04-26', {
-          timezone: 'Asia/Jakarta',
-          locale: 'invalid-locale',
-        }),
-      ).not.toThrow();
-    });
-  });
-
   describe('Year 2038 Problem & Extreme Dates', () => {
     test('handles year 2038 boundary', () => {
       const year2038 = waktos('2038-01-19T03:14:07.000Z');
@@ -234,7 +208,7 @@ describe('Edge Cases', () => {
     test('handles very early dates', () => {
       const veryEarly = waktos('1901-12-13T20:45:52.000Z');
 
-      expect(veryEarly.year()).toBeGreaterThanOrEqual(1970); // May clamp to epoch
+      expect(veryEarly.year()).toBe(1901);
     });
 
     test('handles far future dates', () => {
