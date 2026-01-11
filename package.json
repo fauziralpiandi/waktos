@@ -62,7 +62,7 @@
     "bench": "vitest bench --run",
     "build": "bash scripts/builder.sh",
     "bundle": "node scripts/bundle-analyzer.js",
-    "format": "prettier --write \"**/*.{js,ts,md}\"",
+    "format": "prettier --write \"**/*.{js,ts,yml,md}\"",
     "lint": "bash scripts/linter.sh",
     "prepublishOnly": "npm run build",
     "test": "vitest --run"
@@ -78,6 +78,10 @@
     "not dead",
     "not op_mini all"
   ],
+  "prettier": {
+    "bracketSpacing": true,
+    "singleQuote": true
+  },
   "release": {
     "branches": [
       "main"
@@ -85,19 +89,30 @@
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
+      "@semantic-release/npm",
+      [
+        "@semantic-release/git",
+        {
+          "assets": [
+            "package.json",
+            "package-lock.json"
+          ]
+        }
+      ],
       "@semantic-release/github"
     ]
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
-    "@types/node": "^25.0.3",
-    "eslint": "^9.39.2",
+    "@fauziralpiandi/eslint-config": "^0.1.1",
+    "@semantic-release/github": "^12.0.2",
+    "@types/node": "^25.0.6",
+    "fast-glob": "^3.3.3",
     "prettier": "^3.7.4",
     "semantic-release": "^25.0.2",
-    "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.50.0",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.16"
   },
   "publishConfig": {

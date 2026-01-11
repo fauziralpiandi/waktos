@@ -13,7 +13,7 @@ spin() {
   done
 }
 
-tsup --silent &
+vite build --logLevel error &
 pid=$!
 
 spin "$pid"
@@ -25,6 +25,9 @@ printf "\r\033[K"
 if [ $exit_code -ne 0 ]; then
   exit $exit_code
 fi
+
+# cleanup internal types declarations
+rm -f dist/cache.d.ts dist/constants.d.ts dist/utils.d.ts
 
 node scripts/bundle-analyzer.js
 # cd demo && npm i .. >/dev/null 2>&1
