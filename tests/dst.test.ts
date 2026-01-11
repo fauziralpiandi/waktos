@@ -6,10 +6,10 @@ describe('DST Handling (Daylight Saving Time)', () => {
   // Timezone: America/New_York
   describe('Spring Forward (America/New_York)', () => {
     test('handles the moment before transition', () => {
-      // 1:59 AM EST
-      const date = waktos('2023-03-12T01:59:00', {
-        timezone: 'America/New_York',
-      });
+      // 1:59 AM EST (-05:00)
+      const date = waktos('2023-03-12T01:59:00-05:00').timezone(
+        'America/New_York',
+      );
 
       expect(date.hour()).toBe(1);
       expect(date.minute()).toBe(59);
@@ -17,14 +17,10 @@ describe('DST Handling (Daylight Saving Time)', () => {
     });
 
     test('handles the jump (2:30 AM does not exist, should normalize or clamp)', () => {
-      // If we try to set time to "invalid" DST gap, behavior depends on implementation.
-      // Usually libraries jump to 3:30 or 1:30. Let's see how waktos handles strict parsing logic or arithmetic.
-
-      // Let's test arithmetic: 1:00 AM + 2 hours = 3:00 AM (effectively 4:00 AM wall clock? No, 1AM + 1h = 2AM->3AM)
-      // Wait, 1:59 AM + 1 minute = 3:00 AM EDT
-      const before = waktos('2023-03-12T01:59:00', {
-        timezone: 'America/New_York',
-      });
+      // 1:59 AM EST (-05:00)
+      const before = waktos('2023-03-12T01:59:00-05:00').timezone(
+        'America/New_York',
+      );
       const after = before.add(1, 'minute');
 
       expect(after.hour()).toBe(3);
@@ -36,14 +32,10 @@ describe('DST Handling (Daylight Saving Time)', () => {
   // DST End (Fall Back): Sunday, November 5, 2023, 2:00:00 AM clocks were turned backward 1 hour to 1:00:00 AM
   describe('Fall Back (America/New_York)', () => {
     test('handles arithmetic across the fallback (1:30 AM EDT -> 1:30 AM EST)', () => {
-      // 12:30 AM EDT (before switch)
-      // + 1 hour should be 1:30 AM EDT (still before switch)
-      // + 2 hours should be 1:30 AM EST (after switch)
-
       // 2023-11-05 00:30 EDT is UTC-4
-      const start = waktos('2023-11-05T00:30:00', {
-        timezone: 'America/New_York',
-      });
+      const start = waktos('2023-11-05T00:30:00-04:00').timezone(
+        'America/New_York',
+      );
 
       expect(start.hour()).toBe(0);
       expect(start.format('Z')).toBe('-04:00');

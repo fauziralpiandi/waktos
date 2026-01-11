@@ -4,9 +4,9 @@ import type {
   DateTimeComponents,
   Waktos,
 } from '..';
+import { TIME_UNITS } from '../constants';
 import type { Locale } from '../locale';
 import { type DateInput, parseInput } from '../utils';
-import { TIME_UNITS } from '../constants';
 
 declare module '..' {
   interface Waktos {
@@ -65,11 +65,14 @@ export default function plugin(constructor: Constructor): void {
   const w = constructor.prototype;
 
   Object.assign(w, {
-    diff(this: Comparison, target: DateInput, unit?: ComparisonUnit): number {
-      const resolvedUnit = unit ?? 'second';
+    diff(
+      this: Comparison,
+      target: DateInput,
+      unit: ComparisonUnit = 'second',
+    ): number {
       const targetTimestamp = parseInput(target);
 
-      return calculateDiff(this, targetTimestamp, resolvedUnit);
+      return calculateDiff(this, targetTimestamp, unit);
     },
 
     isSameOrBefore(

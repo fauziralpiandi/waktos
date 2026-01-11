@@ -4,10 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import { gzipSync } from 'zlib';
 
-const extensions = file =>
+const extensions = (file) =>
   (file.endsWith('.js') || file.endsWith('.cjs')) && !file.endsWith('.map');
 
-const analyzeFile = filePath => {
+const analyzeFile = (filePath) => {
   try {
     if (!fs.existsSync(filePath) || !extensions(filePath)) return null;
 
@@ -36,7 +36,7 @@ const getPlugin = () => {
     return fs
       .readdirSync(pluginDir)
       .filter(extensions)
-      .map(f => ({
+      .map((f) => ({
         name: f.replace(/\.(js|cjs)$/, ''),
         format: f.endsWith('.js') ? 'esm' : 'cjs',
         path: path.join(pluginDir, f),

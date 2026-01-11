@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'ko-KR',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'YY. M. D.',
-        PP: 'YYYY. M. D.',
-        PPP: 'YYYY년 M월 D일',
-        PPPP: 'YYYY년 M월 D일 dddd',
-      },
-      time: {
-        C: 'A h:mm',
-        CC: 'A h:mm:ss',
-        CCC: 'A h:mm:ss Z',
-        CCCC: 'A h:mm:ss ZZ',
-      },
       default: 'YYYY년 M월 D일 dddd A h:mm',
       toString: 'YYYY년 M월 D일 ddd H:mm:ss ZZ',
     },

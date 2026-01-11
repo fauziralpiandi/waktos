@@ -24,17 +24,15 @@ npm i waktos
 
 ```js
 import waktos from 'waktos';
+import 'waktos/locale/id-id';
 
 // Current time in your system's timezone
 const now = waktos();
 
-// Explicitly set timezone and locale
-const date = waktos('2005-04-26', {
-  timezone: 'Asia/Jakarta',
-  locale: 'id-ID',
-});
+// Chain methods to set context
+const date = waktos('2005-04-26').timezone('Asia/Jakarta').locale('id-ID');
 
-console.log(date.format('PPPP')); // "Selasa, 26 April 2005"
+console.log(date.format('dddd, DD MMMM YYYY')); // "Selasa, 26 April 2005"
 ```
 
 ## Why Waktos? 🌐
@@ -46,15 +44,16 @@ Every Waktos instance "remembers" its configuration. Operations like `startOf`, 
 ```js
 const timestamp = 1715000000000; // A specific moment in UTC
 
-const ny = waktos(timestamp, { timezone: 'America/New_York' });
-const tokyo = waktos(timestamp, { timezone: 'Asia/Tokyo' });
+// Define timezone context via chaining
+const ny = waktos(timestamp).timezone('America/New_York');
+const tokyo = waktos(timestamp).timezone('Asia/Tokyo');
 
 // Same moment, but different "start of day" depending on the timezone
 console.log(ny.startOf('day').format()); // 2024-05-06T00:00:00-04:00
 console.log(tokyo.startOf('day').format()); // 2024-05-06T00:00:00+09:00
 
-// Formatting automatically uses the instance's locale
-const fr = waktos(timestamp, { locale: 'fr-FR' });
+// Formatting automatically uses the instance's locale (including numerals & RTL)
+const fr = waktos(timestamp).locale('fr-FR');
 console.log(fr.format('MMMM')); // "mai"
 ```
 
@@ -108,21 +107,19 @@ console.log(date.quarterOfYear()); // 2
 
 ## Formatting ✨
 
-Format dates using standard tokens. Waktos leverages `Intl.DateTimeFormat` for accurate localization.
+Format dates using standard tokens. Waktos leverages `Intl.DateTimeFormat` for accurate localization, including support for local numbering systems (e.g., Arabic, Hindi) and RTL text.
 
 ```js
 const date = waktos('2005-04-26');
 
-// Localized Presets
-date.format('P'); // "04/26/05"
-date.format('PP'); // "Apr 26, 2005"
-date.format('PPP'); // "April 26, 2005"
-date.format('PPPP'); // "Tuesday, April 26, 2005"
-
-// Custom Patterns
+// Standard Patterns
 date.format('YYYY-MM-DD'); // "2005-04-26"
+date.format('dddd, DD MMMM YYYY'); // "Tuesday, 26 April 2005"
 date.format('[Born on] dddd'); // "Born on Tuesday"
 date.format('h:mm A Z'); // "12:00 AM +07:00"
+
+// Localized Output (Arabic example)
+waktos(date).locale('ar-sa').format('YYYY-MM-DD'); // "٢٠٠٥-٠٤-٢٦" (Uses Eastern Arabic numerals)
 ```
 
 ## TypeScript Support 💙
@@ -157,7 +154,9 @@ Migration is straightforward as Waktos shares a similar API philosophy.
 +waktos('2005-04-26').add(1, 'second');
 ```
 
-- **Differences:** Units are singular (e.g., `'day'`, not `'days'`) for consistency.
+- **Differences:**
+  - Units are singular (e.g., `'day'`, not `'days'`) for consistency.
+  - Configuration uses chaining (e.g., `.locale('id')`) instead of options objects or global state.
 
 ### From Native Date
 

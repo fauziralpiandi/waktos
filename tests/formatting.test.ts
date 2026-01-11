@@ -51,22 +51,6 @@ describe('Formatting', () => {
     });
   });
 
-  describe('Preset Patterns', () => {
-    test('date presets', () => {
-      expect(typeof date.format('P')).toBe('string'); // Short date
-      expect(typeof date.format('PP')).toBe('string'); // Medium date
-      expect(typeof date.format('PPP')).toBe('string'); // Long date
-      expect(typeof date.format('PPPP')).toBe('string'); // Full date
-    });
-
-    test('time presets', () => {
-      expect(typeof date.format('C')).toBe('string'); // Short time
-      expect(typeof date.format('CC')).toBe('string'); // Medium time
-      expect(typeof date.format('CCC')).toBe('string'); // Long time
-      expect(typeof date.format('CCCC')).toBe('string'); // Full time
-    });
-  });
-
   describe('Literal Text', () => {
     test('handles literal brackets', () => {
       expect(date.format('[Year:] YYYY')).toBe('Year: 2005');

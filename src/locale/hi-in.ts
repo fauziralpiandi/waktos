@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'hi-IN',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'D/M/YY',
-        PP: 'D MMM YYYY',
-        PPP: 'D MMMM YYYY',
-        PPPP: 'dddd, D MMMM YYYY',
-      },
-      time: {
-        C: 'h:mm a',
-        CC: 'h:mm:ss a',
-        CCC: 'h:mm:ss a Z',
-        CCCC: 'h:mm:ss a ZZ',
-      },
       default: 'dddd, D MMMM YYYY [को] h:mm a',
       toString: 'ddd, D MMMM YYYY h:mm:ss a ZZ',
     },
@@ -79,32 +67,43 @@ const LOCALE: Locale = {
       },
     },
     numeral: (n: number | string) => {
-      return String(n)
-        .split('')
-        .map(digit => {
+      // eslint-disable-next-line @typescript-eslint/no-misused-spread
+      return [...String(n)]
+        .map((digit) => {
           switch (digit) {
-            case '0':
+            case '0': {
               return '०';
-            case '1':
+            }
+            case '1': {
               return '१';
-            case '2':
+            }
+            case '2': {
               return '२';
-            case '3':
+            }
+            case '3': {
               return '३';
-            case '4':
+            }
+            case '4': {
               return '४';
-            case '5':
+            }
+            case '5': {
               return '५';
-            case '6':
+            }
+            case '6': {
               return '६';
-            case '7':
+            }
+            case '7': {
               return '७';
-            case '8':
+            }
+            case '8': {
               return '८';
-            case '9':
+            }
+            case '9': {
               return '९';
-            default:
+            }
+            default: {
               return digit;
+            }
           }
         })
         .join('');
