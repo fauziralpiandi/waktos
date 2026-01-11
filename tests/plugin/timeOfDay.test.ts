@@ -13,10 +13,10 @@ describe('Plugin: Time of Day', () => {
     // But let's check id-id which usually has distinct "pagi", "siang", etc.
 
     const locale = 'id-id';
-    const pagi = waktos('2023-01-01T06:00:00', { locale });
-    const siang = waktos('2023-01-01T12:00:00', { locale });
-    const sore = waktos('2023-01-01T16:00:00', { locale });
-    const malam = waktos('2023-01-01T20:00:00', { locale });
+    const pagi = waktos('2023-01-01T06:00:00').locale(locale);
+    const siang = waktos('2023-01-01T12:00:00').locale(locale);
+    const sore = waktos('2023-01-01T16:00:00').locale(locale);
+    const malam = waktos('2023-01-01T20:00:00').locale(locale);
 
     // Note: This test depends on id-id.ts actually having `periods`.
     // If not, it returns fallback. Let's verify what we have in id-id.ts first implicitly.

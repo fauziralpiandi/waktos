@@ -1,10 +1,10 @@
 const MILLISECOND = Object.freeze({
-  SECOND: 1_000,
+  SECOND: 1000,
   MINUTE: 60_000,
   HOUR: 3_600_000,
   DAY: 86_400_000,
   WEEK: 604_800_000,
-  MONTH: 30.436875 * 86_400_000, // avg. gregorian month length
+  MONTH: 30.436_875 * 86_400_000, // avg. gregorian month length
   YEAR: 365.2425 * 86_400_000, // accounts for leap year cycle
 });
 

@@ -1,7 +1,7 @@
 import type { Constructor, Waktos } from '..';
+import { MILLISECOND } from '../constants';
 import type { Locale, RelativeUnit } from '../locale';
 import { type DateInput, parseInput } from '../utils';
-import { MILLISECOND } from '../constants';
 
 declare module '..' {
   interface Waktos {
@@ -82,15 +82,11 @@ function resolveTimeUnit(millisecond: number): [RelativeUnit, number] {
     : ['month', monthCount];
 }
 
-/**
- * Generates human-friendly relative time strings.
- * Under 5 seconds = "now", supports RTL languages.
- */
 function relativeTime(source: number, target: number, locale: Locale): string {
   const diff = target - source;
   const absDiff = Math.abs(diff);
 
-  if (absDiff <= 5_000) {
+  if (absDiff <= 5000) {
     // under 5 seconds feels like "now" to humans
     const text = locale.format.relative.units.second.singular;
 

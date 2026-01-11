@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'ja-JP',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'YYYY/M/D',
-        PP: 'YYYY/M/D',
-        PPP: 'YYYY年M月D日',
-        PPPP: 'YYYY年M月D日dddd',
-      },
-      time: {
-        C: 'H:mm',
-        CC: 'H:mm:ss',
-        CCC: 'H:mm:ss Z',
-        CCCC: 'H:mm:ss ZZ',
-      },
       default: 'YYYY年M月D日dddd H:mm',
       toString: 'YYYY年M月D日(ddd) H:mm:ss ZZ',
     },

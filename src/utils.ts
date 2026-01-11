@@ -1,16 +1,8 @@
 type DateInput = Date | number | string | { valueOf(): number };
 
-/**
- * Every 4 years, except century years, except every 400 years.
- */
 const leapYear = (year: number): boolean =>
   !(year & 3) && (year % 100 !== 0 || year % 400 === 0);
 
-/**
- * Parses various date inputs into UTC timestamps. Handles edge cases gracefully.
- * @example parseInput('2005-04-26') // defaults to midnight Local (2005-04-26T00:00:00)
- * @example parseInput('2005-04-26 15:30') // space becomes T separator (2005-04-26T15:30:00 Local)
- */
 const parseInput = (input: DateInput): number => {
   let result: number;
 
@@ -26,7 +18,7 @@ const parseInput = (input: DateInput): number => {
   ) {
     const value = input.valueOf();
 
-    result = typeof value === 'number' ? value : NaN;
+    result = typeof value === 'number' ? value : Number.NaN;
   } else if (typeof input === 'string' && input.trim()) {
     let normalized = input.trim();
 
@@ -42,7 +34,7 @@ const parseInput = (input: DateInput): number => {
       result = new Date(normalized).getTime();
     }
   } else {
-    result = NaN;
+    result = Number.NaN;
   }
 
   if (!Number.isFinite(result)) {
@@ -54,7 +46,7 @@ const parseInput = (input: DateInput): number => {
     throw new Error(`Invalid date input: ${String(value)}`);
   }
 
-  return Math.max(0, result);
+  return result;
 };
 
 export type { DateInput };

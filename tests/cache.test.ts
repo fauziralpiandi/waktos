@@ -59,13 +59,18 @@ describe('Caching System', () => {
     test('Should reuse Intl.DateTimeFormat instances', () => {
       const spy = vi.spyOn(Intl, 'DateTimeFormat');
       const ts = 1703505600000;
-      const options = { locale: 'en-US', timezone: 'UTC' };
 
       // First call: Should create new formatter
-      waktos(ts, options).format();
+      waktos(ts).locale('en-US').timezone('UTC').format();
       // Second call: Should reuse cached formatter
-      waktos(ts + 1000, options).format();
-      waktos(ts + 2000, options).format();
+      waktos(ts + 1000)
+        .locale('en-US')
+        .timezone('UTC')
+        .format();
+      waktos(ts + 2000)
+        .locale('en-US')
+        .timezone('UTC')
+        .format();
 
       // Check how many times the constructor was called with these exact args
       // Note: Internal logic might create formatters for other purposes (like parsing parts),
@@ -77,7 +82,7 @@ describe('Caching System', () => {
 
       // Let's count unique calls.
       const calls = spy.mock.calls.filter(
-        args => args[0] === 'en-US' && (args[1] as any)?.timeZone === 'UTC',
+        (args) => args[0] === 'en-US' && (args[1] as any)?.timeZone === 'UTC',
       );
 
       // Depending on implementation details (e.g. fallback logic), it might be called once or twice initially,

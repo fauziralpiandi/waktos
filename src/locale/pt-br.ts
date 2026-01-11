@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'pt-BR',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'DD/MM/YY',
-        PP: 'DD [de] MMM [de] YYYY',
-        PPP: 'DD [de] MMMM [de] YYYY',
-        PPPP: 'dddd, DD [de] MMMM [de] YYYY',
-      },
-      time: {
-        C: 'HH:mm',
-        CC: 'HH:mm:ss',
-        CCC: 'HH:mm:ss Z',
-        CCCC: 'HH:mm:ss ZZ',
-      },
       default: 'dddd, DD [de] MMMM [de] YYYY [às] HH:mm',
       toString: 'ddd DD [de] MMM [de] YYYY HH:mm:ss ZZ',
     },

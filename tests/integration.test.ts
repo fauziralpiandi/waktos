@@ -41,7 +41,7 @@ describe('Comprehensive Core API Tests', () => {
     // Expected: 2023-12-25 21:00:00
 
     test('Creation & Getters', () => {
-      const date = waktos(FIXED_TIMESTAMP, { timezone: TZ });
+      const date = waktos(FIXED_TIMESTAMP).timezone(TZ);
 
       expect(date.year()).toBe(2023);
       expect(date.month()).toBe(12);
@@ -51,7 +51,7 @@ describe('Comprehensive Core API Tests', () => {
     });
 
     test('Formatting matches Timezone', () => {
-      const date = waktos(FIXED_TIMESTAMP, { timezone: TZ });
+      const date = waktos(FIXED_TIMESTAMP).timezone(TZ);
 
       // ISO format with offset
       expect(date.format('YYYY-MM-DD HH:mm:ss Z')).toBe(
@@ -60,7 +60,7 @@ describe('Comprehensive Core API Tests', () => {
     });
 
     test('Setters respect Timezone', () => {
-      const date = waktos(FIXED_TIMESTAMP, { timezone: TZ }); // 21:00
+      const date = waktos(FIXED_TIMESTAMP).timezone(TZ); // 21:00
       const nextHour = date.hour(22); // Set to 22:00 JST
 
       expect(nextHour.hour()).toBe(22);
@@ -74,14 +74,14 @@ describe('Comprehensive Core API Tests', () => {
     const LOCALE = 'id-id';
 
     test('Formatting (Month Names)', () => {
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE);
 
       // "Desember" is Indonesian for December
       expect(date.format('MMMM')).toBe('Desember');
     });
 
     test('Formatting (Day Names)', () => {
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE);
 
       // 25 Dec 2023 is Monday -> "Senin"
       expect(date.format('dddd')).toBe('Senin');
@@ -89,7 +89,7 @@ describe('Comprehensive Core API Tests', () => {
 
     test('Default Format', () => {
       // Just ensure it doesn't crash and returns string
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE);
 
       expect(typeof date.toString()).toBe('string');
     });
@@ -101,13 +101,13 @@ describe('Comprehensive Core API Tests', () => {
     // Expected: 2023-12-25 07:00:00
 
     test('Creation & Getters', () => {
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE, timezone: TZ });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE).timezone(TZ);
 
       expect(date.hour()).toBe(7); // 12 - 5
     });
 
     test('Formatting (Localized + Timezone)', () => {
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE, timezone: TZ });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE).timezone(TZ);
 
       // French uses lowercase for months usually, but let's check day
       // Monday -> Lundi
@@ -117,7 +117,7 @@ describe('Comprehensive Core API Tests', () => {
 
     test('StartOf Year (Timezone aware)', () => {
       // Start of year in NY: 2023-01-01 00:00:00 EST
-      const date = waktos(FIXED_TIMESTAMP, { locale: LOCALE, timezone: TZ });
+      const date = waktos(FIXED_TIMESTAMP).locale(LOCALE).timezone(TZ);
       const startYear = date.startOf('year');
 
       expect(startYear.format('YYYY-MM-DD HH:mm:ss')).toBe(
