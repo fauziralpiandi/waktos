@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'ru-RU',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'DD.MM.YY',
-        PP: 'D MMM YYYY [г.]',
-        PPP: 'D MMMM YYYY [г.]',
-        PPPP: 'dddd, D MMMM YYYY [г.]',
-      },
-      time: {
-        C: 'HH:mm',
-        CC: 'HH:mm:ss',
-        CCC: 'HH:mm:ss Z',
-        CCCC: 'HH:mm:ss ZZ',
-      },
       default: 'dddd, D MMMM YYYY [г.] [в] HH:mm',
       toString: 'ddd DD MMM YYYY [г.] HH:mm:ss ZZ',
     },

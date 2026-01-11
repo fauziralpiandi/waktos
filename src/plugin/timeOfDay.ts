@@ -24,7 +24,7 @@ const resolveTimeOfDay = (hour: number, locale: Locale): string => {
   if (matchedRange) return matchedRange.label;
   if (ranges[0]) return ranges[0].label;
 
-  return '<timeOfDay>'; // better than nothing :D
+  return '';
 };
 
 export default function plugin(constructor: Constructor): void {

@@ -1,6 +1,6 @@
 import type { Constructor, DateTimeComponents, Waktos } from '..';
-import type { Locale } from '../locale';
 import { MILLISECOND } from '../constants';
+import type { Locale } from '../locale';
 import { leapYear } from '../utils';
 
 declare module '..' {
@@ -22,7 +22,7 @@ interface CalendarMath extends Waktos {
 function calculateDayOfYear(year: number, month: number, day: number): number {
   const daysInMonths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
-  if (leapYear(year)) daysInMonths[1] = 29; // every 4 years, except century years, except every 400
+  if (leapYear(year)) daysInMonths[1] = 29;
 
   let dayOfYear = day;
 
@@ -48,10 +48,6 @@ function calculateWeeksInYear(year: number): number {
   return jan1Day === 4 || (leapYear(year) && jan1Day === 3) ? 53 : 52; // ISO 8601 week magic
 }
 
-/**
- * Calculates ISO 8601 week number. Week 1 contains January 4th.
- * Handles cross-year boundaries and different week start days.
- */
 function calculateWeekOfYear(
   year: number,
   month: number,

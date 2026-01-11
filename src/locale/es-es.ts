@@ -1,4 +1,4 @@
-import { type Locale, addLocale } from '.';
+import { addLocale, type Locale } from '.';
 
 const LOCALE: Locale = {
   code: 'es-ES',
@@ -50,18 +50,6 @@ const LOCALE: Locale = {
   },
   format: {
     patterns: {
-      date: {
-        P: 'D/M/YY',
-        PP: 'D MMM YYYY',
-        PPP: 'D [de] MMMM [de] YYYY',
-        PPPP: 'dddd, D [de] MMMM [de] YYYY',
-      },
-      time: {
-        C: 'H:mm',
-        CC: 'H:mm:ss',
-        CCC: 'H:mm:ss Z',
-        CCCC: 'H:mm:ss ZZ',
-      },
       default: 'dddd, D [de] MMMM [de] YYYY [a las] H:mm',
       toString: 'ddd DD MMM YYYY H:mm:ss ZZ',
     },

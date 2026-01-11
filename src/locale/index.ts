@@ -54,8 +54,6 @@ interface Locale {
   };
   format: {
     patterns: {
-      date: { P: string; PP: string; PPP: string; PPPP: string };
-      time: { C: string; CC: string; CCC: string; CCCC: string };
       default: string;
       toString: string;
     };
@@ -80,7 +78,6 @@ interface GlobalWithLocaleMap {
 const getGlobalScope = (): GlobalWithLocaleMap => {
   if (typeof globalThis !== 'undefined')
     return globalThis as GlobalWithLocaleMap;
-  if (typeof global !== 'undefined') return global as GlobalWithLocaleMap;
 
   return {};
 };
@@ -102,10 +99,6 @@ const addLocale = (locale: Locale): void => {
   LOCALE_REGISTRY.set(code, locale);
 };
 
-/**
- * Normalizes locale codes to standard format (en-US, de-DE, etc).
- * Handles fallbacks and ensures consistent casing.
- */
 const normalizeLocaleCode = (code: string | null | undefined): string => {
   const [language, region] = (code ?? 'en-US').split('-', 2);
   const lowerLanguage = language.toLowerCase();
