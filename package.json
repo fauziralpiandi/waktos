@@ -1,13 +1,9 @@
 {
   "name": "waktos",
   "version": "4.0.0",
-  "description": "~5kb for the death of ugly dates!",
+  "description": "~4kB for the death of ugly dates!",
   "keywords": [
-    "waktos",
-    "date",
-    "time",
-    "datetime",
-    "i18n"
+    "waktos"
   ],
   "homepage": "https://github.com/fauziralpiandi/waktos#readme",
   "bugs": {
@@ -20,67 +16,47 @@
   "license": "MIT",
   "author": "Fauzira Alpiandi <fauziralpiandi.dev@gmail.com>",
   "sideEffects": false,
-  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
+      "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
-    },
-    "./locale/*": {
-      "types": "./dist/locale/*.d.ts",
-      "import": "./dist/locale/*.js",
-      "require": "./dist/locale/*.cjs"
     },
     "./plugin/*": {
       "types": "./dist/plugin/*.d.ts",
-      "import": "./dist/plugin/*.js",
+      "import": "./dist/plugin/*.mjs",
       "require": "./dist/plugin/*.cjs"
     }
   },
   "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
-  "source": "./src/index.ts",
+  "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "typesVersions": {
-    "*": {
-      "*": [
-        "dist/index.d.ts"
-      ],
-      "locale/*": [
-        "dist/locale/*.d.ts"
-      ],
-      "plugin/*": [
-        "dist/plugin/*.d.ts"
-      ]
-    }
-  },
   "files": [
     "dist"
   ],
   "scripts": {
     "bench": "vitest bench --run",
-    "build": "bash scripts/builder.sh",
-    "bundle": "node scripts/bundle-analyzer.js",
-    "format": "prettier --write \"**/*.{js,ts,yml,md}\"",
-    "lint": "bash scripts/linter.sh",
-    "prepublishOnly": "npm run build",
+    "build": "tsup && size-limit",
+    "format": "prettier --write .",
+    "lint": "eslint --fix src tests",
+    "prepublishOnly": "pnpm build",
     "test": "vitest --run"
   },
   "browserslist": [
-    "Chrome >= 85",
-    "Firefox >= 79",
-    "Safari >= 14.7",
-    "Edge >= 85",
-    "iOS >= 14.7",
-    "Android >= 85",
+    "Chrome >= 84",
+    "Firefox >= 84",
+    "Safari >= 14.1",
+    "Edge >= 84",
+    "iOS >= 14.5",
+    "Android >= 84",
+    "Samsung >= 14",
     "not IE 11",
     "not dead",
     "not op_mini all"
   ],
   "prettier": {
     "bracketSpacing": true,
-    "singleQuote": true
+    "trailingComma": "none"
   },
   "release": {
     "branches": [
@@ -94,8 +70,7 @@
         "@semantic-release/git",
         {
           "assets": [
-            "package.json",
-            "package-lock.json"
+            "package.json"
           ]
         }
       ],
@@ -103,20 +78,27 @@
     ]
   },
   "devDependencies": {
-    "@fauziralpiandi/eslint-config": "^0.1.1",
+    "@fauziralpiandi/eslint-config": "^2.0.0",
     "@semantic-release/git": "^10.0.1",
-    "@types/node": "^25.0.6",
-    "fast-glob": "^3.3.3",
-    "prettier": "^3.7.4",
-    "semantic-release": "^25.0.2",
-    "tsx": "^4.21.0",
+    "@size-limit/preset-small-lib": "^12.1.0",
+    "@types/node": "^25.6.0",
+    "prettier": "^3.8.3",
+    "semantic-release": "^25.0.3",
+    "size-limit": "^12.1.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1",
-    "vite-plugin-dts": "^4.5.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.1.5"
   },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  }
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "size-limit": [
+    {
+      "path": "dist/index.mjs",
+      "limit": "4.99 kB"
+    },
+    {
+      "path": "dist/**/*.mjs"
+    }
+  ]
 }
