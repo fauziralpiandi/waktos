@@ -1,114 +1,178 @@
-import { describe, expect, test } from 'vitest';
-import waktos from 'waktos';
+import { describe, expect, it } from "vitest";
+import Waktos, { type Duration, type Plugin } from "../src";
+import { asUtc } from "./helpers";
 
-const DATE = '2005-04-26T12:30:45.123Z';
+describe("core", () => {
+  it("gets now with system defaults", () => {
+    const before = Date.now();
+    const now = Waktos.now();
+    const after = Date.now();
+    const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale;
 
-describe('Core', () => {
-  describe('Instance Creation', () => {
-    test('creates from current time', () => {
-      const now = waktos();
-
-      expect(now).toBeDefined();
-      expect(typeof now.valueOf()).toBe('number');
-    });
-
-    test('creates from string', () => {
-      const date = waktos(DATE);
-
-      expect(date.year()).toBe(2005);
-      expect(date.month()).toBe(4);
-      expect(date.day()).toBe(26);
-    });
-
-    test('creates from timestamp', () => {
-      const timestamp = 1114518645123;
-      const date = waktos(timestamp);
-
-      expect(date.valueOf()).toBe(timestamp);
-    });
-
-    test('creates from Date object', () => {
-      const dateObj = new Date(DATE);
-      const date = waktos(dateObj);
-
-      expect(date.valueOf()).toBe(dateObj.getTime());
-    });
+    expect(now.valueOf()).toBeGreaterThanOrEqual(before);
+    expect(now.valueOf()).toBeLessThanOrEqual(after);
+    expect(now.context().locale).toBe(systemLocale);
+    expect(now.context().zone).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone
+    );
   });
 
-  describe('Getters', () => {
-    const date = waktos(DATE);
+  it("creates utc and local values", () => {
+    const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const source = "2005-04-26T03:04:05.006Z";
 
-    test('gets date components', () => {
-      expect(date.year()).toBe(2005);
-      expect(date.month()).toBe(4);
-      expect(date.day()).toBe(26);
-      expect(date.hour()).toBe(12);
-      expect(date.minute()).toBe(30);
-      expect(date.second()).toBe(45);
-      expect(date.millisecond()).toBe(123);
-    });
+    const utc = Waktos.utc(source);
+    const local = Waktos.local(source);
 
-    test('gets with method', () => {
-      expect(date.get('year')).toBe(2005);
-      expect(date.get('month')).toBe(4);
-      expect(date.get('day')).toBe(26);
-    });
+    expect(utc.context().zone).toBe("UTC");
+    expect(utc.toISOString()).toBe("2005-04-26T03:04:05.006Z");
+
+    expect(local.context().zone).toBe(systemZone);
+    expect(local.toISOString()).toBe("2005-04-26T03:04:05.006Z");
+
+    expect(() => Waktos.utc(undefined as unknown as string)).toThrow(TypeError);
+    expect(() => Waktos.local(undefined as unknown as string)).toThrow(
+      TypeError
+    );
   });
 
-  describe('Setters', () => {
-    const date = waktos(DATE);
-
-    test('sets individual components', () => {
-      expect(date.year(2024).year()).toBe(2024);
-      expect(date.month(12).month()).toBe(12);
-      expect(date.day(15).day()).toBe(15);
-      expect(date.hour(18).hour()).toBe(18);
-    });
-
-    test('sets with object', () => {
-      const result = date.set({ year: 2024, month: 12, day: 25 });
-
-      expect(result.year()).toBe(2024);
-      expect(result.month()).toBe(12);
-      expect(result.day()).toBe(25);
-    });
-
-    test('preserves immutability', () => {
-      const modified = date.year(2024);
-
-      expect(date.year()).toBe(2005); // Original unchanged
-      expect(modified.year()).toBe(2024); // New instance
-    });
+  it("parses timestamps and rejects bad numbers", () => {
+    expect(Waktos.from(1_735_787_045_000).toISOString()).toBe(
+      "2025-01-02T03:04:05.000Z"
+    );
+    expect(Waktos.from(1.25).toISOString()).toBe("1970-01-01T00:00:00.001Z");
+    expect(Waktos.from(-1).toISOString()).toBe("1969-12-31T23:59:59.999Z");
+    expect(() => Waktos.from(Number.NaN)).toThrow(RangeError);
+    expect(() => Waktos.from(Number.POSITIVE_INFINITY)).toThrow(RangeError);
   });
 
-  describe('Conversions', () => {
-    const date = waktos(DATE);
+  it("validates input and copies instances", () => {
+    const base = asUtc("2005-04-26T03:04:05.006Z");
+    const copied = Waktos.from(base);
+    const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const systemLocale = Intl.DateTimeFormat().resolvedOptions().locale;
 
-    test('converts to primitives', () => {
-      expect(date.valueOf()).toBe(1114518645123);
-      expect(date.unix()).toBe(1114518645);
-      expect(date.toJSON()).toBe(DATE);
-    });
+    expect(copied.valueOf()).toBe(base.valueOf());
+    expect(copied.context().locale).toBe(systemLocale);
+    expect(copied.context().zone).toBe(systemZone);
+  });
 
-    test('converts to objects', () => {
-      const obj = date.toObject();
+  it("validates input with Waktos.isValid", () => {
+    const base = asUtc("2005-04-26T03:04:05.006Z");
 
-      expect(obj.year).toBe(2005);
-      expect(obj.month).toBe(4);
-      expect(obj.day).toBe(26);
-    });
+    expect(Waktos.isValid(base)).toBe(true);
+    expect(Waktos.isValid("2005-04-26T03:04:05Z")).toBe(true);
+    expect(Waktos.isValid(123_456)).toBe(true);
+    expect(Waktos.isValid(new Date("2005-04-26T03:04:05.006Z"))).toBe(true);
 
-    test('converts to array', () => {
-      const arr = date.toArray();
+    expect(Waktos.isValid("garbage")).toBe(false);
+    expect(Waktos.isValid(undefined)).toBe(false);
+    expect(Waktos.isValid(Number.NaN)).toBe(false);
+    expect(Waktos.isValid(new Date("invalid"))).toBe(false);
+    expect(Waktos.isValid({ valueOf: () => 1 })).toBe(false);
+  });
 
-      expect(arr).toEqual([2005, 4, 26, 12, 30, 45, 123]);
-    });
+  it("stays immutable", () => {
+    const original = asUtc("2005-04-26T00:00:00.000Z");
+    const localized = original.locale("id");
+    const zoned = original.zone("Asia/Jakarta");
+    const local = original.local();
+    const added = original.add({ day: 1, hours: 2 });
 
-    test('converts to Date object', () => {
-      const dateObj = date.toDate();
+    expect(original.toISOString()).toBe("2005-04-26T00:00:00.000Z");
+    expect(localized.context().locale).toBe("id");
+    expect(zoned.context().zone).toBe("Asia/Jakarta");
+    expect(local.valueOf()).toBe(original.valueOf());
+    expect(added.valueOf()).not.toBe(original.valueOf());
+    expect(original.context().zone).toBe("UTC");
+  });
 
-      expect(dateObj).toBeInstanceOf(Date);
-      expect(dateObj.getTime()).toBe(date.valueOf());
-    });
+  it("can switch back to local zone", () => {
+    const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const utc = asUtc("2026-02-20T00:00:00.000Z");
+
+    const local = utc.local();
+
+    expect(local.context().zone).toBe(systemZone);
+    expect(local.valueOf()).toBe(utc.valueOf());
+  });
+
+  it("requires ordinal plugin before calling Waktos.ordinal", () => {
+    expect(() => Waktos.ordinal("en-US", (value) => String(value))).toThrow(
+      Error
+    );
+  });
+
+  it("handles epoch and negative time", () => {
+    const epoch = Waktos.from(0);
+    expect(epoch.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+
+    const past = epoch.add({ millisecond: -1 });
+    expect(past.toISOString()).toBe("1969-12-31T23:59:59.999Z");
+  });
+
+  it("installs plugins once", () => {
+    let installs = 0;
+    const plugin: Plugin = () => {
+      installs += 1;
+    };
+
+    expect(Waktos.extend(plugin)).toBe(Waktos);
+    expect(Waktos.extend(plugin)).toBe(Waktos);
+    expect(installs).toBe(1);
+    expect(() => Waktos.extend(42 as unknown as Plugin)).toThrow(TypeError);
+  });
+
+  it("compares before, after, and same", () => {
+    const base = asUtc("2026-02-20T00:00:00.000Z");
+    const later = asUtc("2026-02-21T00:00:00.000Z");
+    const same = asUtc("2026-02-20T00:00:00.000Z");
+
+    expect(base.isBefore(later)).toBe(true);
+    expect(later.isAfter(base)).toBe(true);
+    expect(base.isSame(same)).toBe(true);
+    expect(base.isAfter(later)).toBe(false);
+    expect(base.isBefore(same)).toBe(false);
+  });
+
+  it("returns string and Date outputs", () => {
+    const value = asUtc("2005-04-26T03:04:05.006Z");
+
+    expect(value.toString()).toBe("2005-04-26T03:04:05.006+00:00");
+    expect(value.toJSON()).toBe("2005-04-26T03:04:05.006Z");
+    expect(JSON.stringify(value)).toBe('"2005-04-26T03:04:05.006Z"');
+    expect(JSON.stringify({ value })).toBe(
+      '{"value":"2005-04-26T03:04:05.006Z"}'
+    );
+
+    const asDate = value.toDate();
+    expect(asDate).toBeInstanceOf(Date);
+    expect(asDate.toISOString()).toBe("2005-04-26T03:04:05.006Z");
+  });
+
+  it("calculates diffs by unit", () => {
+    const base = asUtc("2026-02-20T00:00:00.000Z");
+    const later = asUtc("2026-02-20T01:30:15.250Z");
+
+    expect(later.diff(base, "millisecond")).toBe(5_415_250);
+    expect(later.diff(base, "second")).toBeCloseTo(5_415.25, 12);
+    expect(later.diff(base, "minute")).toBeCloseTo(90.25416666666666, 12);
+    expect(later.diff(base, "hour")).toBeCloseTo(1.504236111111111, 12);
+    expect(later.diff(base, "day")).toBeCloseTo(0.06267650462962963, 12);
+    expect(later.diff(base, "minutes")).toBeCloseTo(90.25416666666666, 12);
+    expect(later.diff(base, "days")).toBeCloseTo(0.06267650462962963, 12);
+  });
+
+  it("rejects invalid units", () => {
+    const value = asUtc("2026-02-20T00:00:00.000Z");
+    const other = asUtc("2026-02-19T00:00:00.000Z");
+
+    expect(() => value.diff(other, "week" as never)).toThrow(RangeError);
+    expect(() => value.add({ week: 1 } as unknown as Duration)).toThrow(
+      RangeError
+    );
+    expect(() => value.subtract({ quarter: 1 } as unknown as Duration)).toThrow(
+      RangeError
+    );
   });
 });
