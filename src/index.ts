@@ -1,1496 +1,1216 @@
-import { Cache } from './cache';
-import { MILLISECOND, TIME_UNITS } from './constants';
-import { getLocale, type Locale } from './locale';
-import defaultLocale from './locale/en-us';
-import { type DateInput, leapYear, parseInput } from './utils';
+import { Cache } from "./cache";
+import { MS_SECOND, MS_MINUTE, MS_HOUR, MS_DAY } from "./constants";
+import type {
+  Api,
+  CanonicalUnit,
+  CanonicalDuration,
+  DateInput,
+  DateParts,
+  Disambiguation,
+  Duration,
+  IsoFormat,
+  OrdinalFn,
+  PatternFn,
+  PluginCache,
+  Unit
+} from "./types";
 
-interface DateTimeComponents {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  second: number;
-  millisecond: number;
-}
-
-type TimeUnit = 'millisecond' | 'second' | 'minute' | 'hour';
-type DateUnit = 'day' | 'month' | 'year';
-type DerivedUnit = 'week';
-
-type ComponentUnit = TimeUnit | DateUnit;
-type ArithmeticUnit = TimeUnit | DateUnit | DerivedUnit;
-type BoundaryUnit = Exclude<TimeUnit, 'millisecond'> | DateUnit | DerivedUnit;
-type ComparisonUnit = TimeUnit | DateUnit | DerivedUnit | undefined;
-
-interface CacheState {
-  readonly timestamp: number;
-  readonly locale: string;
-  readonly timezone: string;
-  readonly components: DateTimeComponents;
-}
-
-type CacheEntry = CacheState | null;
-
-interface State {
-  readonly _timestamp: number;
-  readonly _locale: Locale;
-  readonly _timezone: string;
-  _cache: CacheEntry;
-}
-
-interface Internal {
-  _extractComponents(): DateTimeComponents;
-  _extractUtcComponents(timestamp: number): DateTimeComponents;
-  _extractTimezoneComponents(
-    timestamp: number,
-    timezone: string,
-    locale?: string,
-  ): DateTimeComponents;
-  _calcBoundary(
-    timestamp: number,
-    unit: BoundaryUnit,
-    end: boolean,
-    locale: Locale,
-    timezone?: string,
-  ): number;
-  _adjustDate(
-    date: Date,
-    value: number,
-    unit: ArithmeticUnit,
-    isUtc?: boolean,
-  ): void;
-  _setField(value: number, field: ComponentUnit): Waktos;
-}
-
-interface Core {
-  valueOf(): number;
-  unix(): number;
-  toDate(): Date;
-  toJSON(): string;
-  toString(): string;
-  toISOString(): string;
-  toDateString(): string;
-  toTimeString(): string;
-  toObject(): DateTimeComponents;
-  toArray(): [number, number, number, number, number, number, number];
-
-  shift(value: number, unit: ArithmeticUnit): Waktos; // alias of add() and sub()
-  add(value: number, unit: ArithmeticUnit): Waktos;
-  sub(value: number, unit: ArithmeticUnit): Waktos;
-
-  startOf(unit: BoundaryUnit): Waktos;
-  endOf(unit: BoundaryUnit): Waktos;
-
-  year(): number;
-  year(value: number): Waktos;
-  month(): number;
-  month(value: number): Waktos;
-  day(): number;
-  day(value: number): Waktos;
-  hour(): number;
-  hour(value: number): Waktos;
-  minute(): number;
-  minute(value: number): Waktos;
-  second(): number;
-  second(value: number): Waktos;
-  millisecond(): number;
-  millisecond(value: number): Waktos;
-
-  get(unit: ComponentUnit): number;
-  set(unit: ComponentUnit, value: number): Waktos;
-  set(values: Partial<DateTimeComponents>): Waktos;
-
-  format(pattern?: string): string;
-
-  locale(code: string): Waktos;
-  timezone(zone: string): Waktos;
-  tz(zone: string): Waktos; // alias of timezone()
-
-  isBefore(date: DateInput, unit?: ComparisonUnit): boolean;
-  isAfter(date: DateInput, unit?: ComparisonUnit): boolean;
-  isSame(date: DateInput, unit?: ComparisonUnit): boolean;
-}
-
-interface Waktos extends Core {
-  readonly _pluginMarker?: boolean; // marker to distinguish from Core
-}
-
-interface Constructor {
-  readonly prototype: Record<string, unknown>;
-}
-
-interface Factory {
-  readonly createInstance: typeof createInstance;
-}
-
-interface Instance extends State, Internal, Core {}
-
-type Plugin = (constructor: Constructor, waktos: Factory) => void;
-
-const TIME_SENSITIVE_UNITS = new Set<ArithmeticUnit>(['day']);
-const DATE_UNITS = new Set<ArithmeticUnit>(['month', 'year']);
-const COMPONENT_UNITS = new Set<ComponentUnit>([
-  'millisecond',
-  'second',
-  'minute',
-  'hour',
-  'day',
-  'month',
-  'year',
-]);
-const BOUNDARY_UNITS = new Set<BoundaryUnit>([
-  'second',
-  'minute',
-  'hour',
-  'day',
-  'week',
-  'month',
-  'year',
-]);
-const INTL_FORMAT_CONFIG = Object.freeze({
-  hour12: false,
-  timeZone: '',
-  calendar: 'gregory',
-  numberingSystem: 'latn',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  fractionalSecondDigits: 3, // precision ftw
-} as const);
-const TOKEN_REGEX =
-  /\[([^\]]+)\]|(?:YYYY|YY|MMMM|MMM|MM|M|Do|DD|D|dddd|ddd|HH|H|hh|h|mm|m|ss|s|SSS|A|a|ZZ|Z)/g;
-
-const systemTimezone = () => {
+function resolveSystem() {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
+    return { locale, timeZone };
   } catch {
-    return 'UTC';
+    return {
+      locale: "en-US",
+      timeZone: "UTC"
+    };
   }
-};
+}
 
-const resolveTimezone = systemTimezone();
+const { locale: LOCALE, timeZone: ZONE } = resolveSystem();
+const MAX_DATE_TIMESTAMP = 8.64e15;
 
-const isUtcTimezone = (timezone?: string): boolean =>
-  !timezone || timezone === 'UTC';
+const stringCache = new Cache<string, number>(384);
+const utcStringCache = new Cache<string, number>(128);
 
-const createCacheKey = (...parts: readonly (string | number)[]): string => {
-  return parts
-    .map((part) => String(part).replaceAll('$', String.raw`\$`)) // escape $ char to prevent collisions
-    .join('$');
-};
+const ISO_REGEX =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:([Zz])|([+-])(\d{2})(?::?(\d{2})))?)?$/;
 
-const isCacheValid = (
-  cache: CacheEntry,
-  timestamp: number,
-  timezone: string,
-  locale: string,
-): cache is CacheState =>
-  cache !== null &&
-  cache.timestamp === timestamp &&
-  cache.timezone === timezone &&
-  cache.locale === locale;
+function isTimestamp(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value) <= MAX_DATE_TIMESTAMP;
+}
 
-const initCacheState = (): CacheEntry => null;
+function partsStamp(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  millisecond: number,
+  utc: boolean
+): number | undefined {
+  const date = new Date(0);
+  const monthIndex = month - 1;
 
-const formatterCache = new Cache<string, Intl.DateTimeFormat>(50);
-// approx 20 days per timezone with 15-mins chunks)
-const offsetCache = new Cache<string, number>(2000);
+  if (utc) {
+    date.setUTCFullYear(year, monthIndex, day);
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== monthIndex ||
+      date.getUTCDate() !== day
+    ) {
+      return undefined;
+    }
+    date.setUTCHours(hour, minute, second, millisecond);
+    const timestamp = date.getTime();
+    return isTimestamp(timestamp) ? timestamp : undefined;
+  }
 
-type Formatter = (
-  nums: DateTimeComponents,
-  locale: Locale,
-  timestamp: number,
-  timezone: string,
-) => string;
+  date.setFullYear(year, monthIndex, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== monthIndex ||
+    date.getDate() !== day
+  ) {
+    return undefined;
+  }
+  date.setHours(hour, minute, second, millisecond);
+  const timestamp = date.getTime();
+  return isTimestamp(timestamp) ? timestamp : undefined;
+}
 
-const compiledFormatterCache = new Cache<string, Formatter[]>(200);
+function parseIso(raw: string, offsetlessAsUtc = false): number | undefined {
+  const match = ISO_REGEX.exec(raw);
+  if (!match) return undefined;
 
-const createInstance = (
-  timestamp: number,
-  locale = defaultLocale,
-  timezone?: string,
-): Waktos => {
-  const instance = Object.create(core) as Instance;
-  const resolvedTimezone = timezone ?? resolveTimezone;
-  const result = Object.assign(instance, {
-    _timestamp: timestamp,
-    _locale: locale,
-    _timezone: resolvedTimezone,
-    _cache: initCacheState(),
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    fractionText,
+    utcMarker,
+    offsetSign,
+    offsetHourText,
+    offsetMinuteText
+  ] = match as unknown as IsoFormat;
+
+  const year = +yearText;
+  const month = +monthText;
+  const day = +dayText;
+  const hour = +(hourText ?? 0);
+  const minute = +(minuteText ?? 0);
+  const second = +(secondText ?? 0);
+  const millisecond = fractionText ? +(fractionText + "00").slice(0, 3) : 0;
+
+  if (hour > 23 || minute > 59 || second > 59) return undefined;
+
+  const wallStamp = partsStamp(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    millisecond,
+    true
+  );
+  if (wallStamp === undefined) return undefined;
+
+  if (utcMarker !== undefined) return wallStamp;
+
+  if (offsetSign === undefined) {
+    if (offsetlessAsUtc) return wallStamp;
+
+    return partsStamp(
+      year,
+      month,
+      day,
+      hour,
+      minute,
+      second,
+      millisecond,
+      false
+    );
+  }
+
+  if (!offsetHourText || !offsetMinuteText) return undefined;
+
+  const offsetHour = +offsetHourText;
+  const offsetMinute = +offsetMinuteText;
+
+  if (offsetHour > 23 || offsetMinute > 59) return undefined;
+
+  const offsetMs = (offsetHour * 60 + offsetMinute) * MS_MINUTE;
+
+  const timestamp = wallStamp + (offsetSign === "+" ? -offsetMs : offsetMs);
+  return isTimestamp(timestamp) ? timestamp : undefined;
+}
+
+function parseWallString(input: unknown): DateParts {
+  if (typeof input !== "string" || !input.trim()) {
+    throw new TypeError("Invalid wall time.");
+  }
+
+  const match = ISO_REGEX.exec(input.trim());
+  if (!match) throw new RangeError("Invalid wall time.");
+
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    fractionText,
+    utcMarker,
+    offsetSign
+  ] = match as unknown as IsoFormat;
+
+  if (utcMarker !== undefined || offsetSign !== undefined) {
+    throw new RangeError("Wall time must not include an offset.");
+  }
+
+  const wall: DateParts = {
+    year: +yearText,
+    month: +monthText,
+    day: +dayText,
+    hour: +(hourText ?? 0),
+    minute: +(minuteText ?? 0),
+    second: +(secondText ?? 0),
+    millisecond: fractionText ? +(fractionText + "00").slice(0, 3) : 0
+  };
+
+  if (
+    wall.hour > 23 ||
+    wall.minute > 59 ||
+    wall.second > 59 ||
+    partsStamp(
+      wall.year,
+      wall.month,
+      wall.day,
+      wall.hour,
+      wall.minute,
+      wall.second,
+      wall.millisecond,
+      true
+    ) === undefined
+  ) {
+    throw new RangeError("Invalid wall time.");
+  }
+
+  return wall;
+}
+
+function parseStringSafe(
+  input: string,
+  cache: Cache<string, number>,
+  offsetlessAsUtc: boolean
+): number | undefined {
+  const trimmedInput = input.trim();
+  if (!trimmedInput) return undefined;
+
+  const cachedTimestamp = cache.get(trimmedInput);
+  if (cachedTimestamp !== undefined) return cachedTimestamp;
+
+  const parsedTimestamp = parseIso(trimmedInput, offsetlessAsUtc);
+  if (parsedTimestamp === undefined) return undefined;
+
+  cache.set(trimmedInput, parsedTimestamp);
+  return parsedTimestamp;
+}
+
+function parseInputSafe(
+  input: unknown,
+  offsetlessAsUtc = false
+): number | undefined {
+  if (typeof input === "string") {
+    return parseStringSafe(
+      input,
+      offsetlessAsUtc ? utcStringCache : stringCache,
+      offsetlessAsUtc
+    );
+  }
+
+  if (typeof input === "number") {
+    return isTimestamp(input) ? input : undefined;
+  }
+
+  if (input instanceof Date) {
+    const timestamp = input.getTime();
+    return isTimestamp(timestamp) ? timestamp : undefined;
+  }
+
+  return undefined;
+}
+
+function parseInput(input: DateInput): number {
+  const parsedTimestamp = parseInputSafe(input, false);
+  if (parsedTimestamp !== undefined) return parsedTimestamp;
+
+  if (typeof input === "string") {
+    if (!input.trim()) throw new TypeError("Invalid date input.");
+    throw new RangeError("Invalid date string.");
+  }
+
+  if (typeof input === "number") {
+    throw new RangeError("Invalid date number.");
+  }
+
+  if (input instanceof Date) {
+    throw new RangeError("Invalid date object.");
+  }
+
+  throw new TypeError("Invalid date input.");
+}
+
+function parseInputUtc(input: DateInput): number {
+  const parsedTimestamp = parseInputSafe(input, true);
+  if (parsedTimestamp !== undefined) return parsedTimestamp;
+
+  if (typeof input === "string") {
+    if (!input.trim()) throw new TypeError("Invalid date input.");
+    throw new RangeError("Invalid date string.");
+  }
+
+  return parseInput(input);
+}
+
+const localeCache = new Cache<string, string>(16);
+const zoneCache = new Cache<string, string>(16);
+
+function fromIntl(
+  raw: string,
+  cache: Cache<string, string>,
+  resolve: (value: string) => string,
+  error: string
+): string {
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new TypeError(error);
+  }
+
+  const value = raw.trim();
+  const cached = cache.get(value);
+  if (cached) return cached;
+
+  try {
+    const normalized = resolve(value);
+    cache.set(value, normalized);
+    return normalized;
+  } catch {
+    throw new RangeError(error);
+  }
+}
+
+function normalizeLocale(locale: string): string {
+  return fromIntl(
+    locale,
+    localeCache,
+    (value) => new Intl.DateTimeFormat(value).resolvedOptions().locale,
+    "Invalid locale code."
+  );
+}
+
+function normalizeZone(zone: string): string {
+  return fromIntl(
+    zone,
+    zoneCache,
+    (value) =>
+      new Intl.DateTimeFormat(undefined, { timeZone: value }).resolvedOptions()
+        .timeZone,
+    "Invalid time zone."
+  );
+}
+
+const offsetCache = new Cache<string, number>(512);
+const formatterCache = new Cache<string, Intl.DateTimeFormat>(12);
+const OFFSET_CHUNK = 15 * MS_MINUTE;
+
+function formatterFor(locale: string, zone: string): Intl.DateTimeFormat {
+  const key = locale + "$" + zone;
+
+  let formatter = formatterCache.get(key);
+  if (formatter) return formatter;
+
+  formatter = new Intl.DateTimeFormat(locale, {
+    hour12: false,
+    timeZone: zone,
+    calendar: "gregory",
+    numberingSystem: "latn",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
   });
 
-  return result as unknown as Waktos;
-};
+  formatterCache.set(key, formatter);
+  return formatter;
+}
 
-const createDateFormatter = (
-  locale: string,
-  timezone: string,
-): Intl.DateTimeFormat => {
-  const key = createCacheKey(locale, timezone);
-  const cachedFormatter = formatterCache.get(key);
+function utcParts(timestamp: number): DateParts {
+  const date = new Date(timestamp);
 
-  if (cachedFormatter) return cachedFormatter;
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds(),
+    millisecond: date.getUTCMilliseconds()
+  };
+}
 
-  try {
-    const instance = new Intl.DateTimeFormat(locale, {
-      ...INTL_FORMAT_CONFIG,
-      timeZone: timezone,
-    });
-
-    formatterCache.set(key, instance);
-
-    return instance;
-  } catch {
-    try {
-      const fallbackInstance = new Intl.DateTimeFormat(defaultLocale.code, {
-        ...INTL_FORMAT_CONFIG,
-        timeZone: timezone,
-      });
-
-      formatterCache.set(key, fallbackInstance);
-
-      return fallbackInstance; // plan B
-    } catch {
-      const finalFallbackInstance = new Intl.DateTimeFormat(
-        defaultLocale.code,
-        {
-          ...INTL_FORMAT_CONFIG,
-          timeZone: resolveTimezone,
-        },
-      );
-
-      formatterCache.set(key, finalFallbackInstance);
-
-      return finalFallbackInstance;
-    }
-  }
-};
-
-const extractComponents = (date: Date, isUtc: boolean): DateTimeComponents => {
-  return isUtc
-    ? {
-        year: date.getUTCFullYear(),
-        month: date.getUTCMonth() + 1,
-        day: date.getUTCDate(),
-        hour: date.getUTCHours(),
-        minute: date.getUTCMinutes(),
-        second: date.getUTCSeconds(),
-        millisecond: date.getUTCMilliseconds(),
-      }
-    : {
-        year: date.getFullYear(),
-        month: date.getMonth() + 1,
-        day: date.getDate(),
-        hour: date.getHours(),
-        minute: date.getMinutes(),
-        second: date.getSeconds(),
-        millisecond: date.getMilliseconds(),
-      };
-};
-
-const extractUtcComponents = (timestamp: number): DateTimeComponents =>
-  extractComponents(new Date(timestamp), true);
-
-const extractLocalComponents = (timestamp: number): DateTimeComponents =>
-  extractComponents(new Date(timestamp), false);
-
-const parseFormatterParts = (
-  parts: readonly Intl.DateTimeFormatPart[],
-): DateTimeComponents => {
-  const result: DateTimeComponents = {
+function parseParts(parts: Intl.DateTimeFormatPart[]): DateParts {
+  const result: DateParts = {
     year: 0,
     month: 0,
     day: 0,
     hour: 0,
     minute: 0,
     second: 0,
-    millisecond: 0,
+    millisecond: 0
   };
 
-  for (const { type, value } of parts) {
-    const numericValue = Number.parseInt(value, 10);
-
+  for (const part of parts) {
+    const numericValue = +part.value;
     if (Number.isNaN(numericValue)) continue;
 
-    switch (type) {
-      case 'year': {
-        result.year = numericValue;
-        break;
-      }
-
-      case 'month': {
-        result.month = numericValue;
-        break;
-      }
-
-      case 'day': {
-        result.day = numericValue;
-        break;
-      }
-
-      case 'hour': {
-        result.hour = numericValue === 24 ? 0 : numericValue; // normalize 24h to 0h for consistency
-        break;
-      }
-
-      case 'minute': {
-        result.minute = numericValue;
-        break;
-      }
-
-      case 'second': {
-        result.second = numericValue;
-        break;
-      }
-
-      default: {
-        if (
-          type === 'fractionalSecond' ||
-          type.startsWith('fractionalSecond')
-        ) {
-          const padded =
-            value.length < 3 ? value.padEnd(3, '0') : value.slice(0, 3);
-          const millisecondValue = Number.parseInt(padded, 10);
-
-          result.millisecond = Number.isNaN(millisecondValue)
-            ? 0
-            : millisecondValue;
-        }
-        break;
-      }
+    if (part.type === "hour") {
+      // some engines return 24:00 instead of 00:00.
+      result.hour = numericValue === 24 ? 0 : numericValue;
+      continue;
     }
+
+    if (
+      part.type !== "year" &&
+      part.type !== "month" &&
+      part.type !== "day" &&
+      part.type !== "minute" &&
+      part.type !== "second"
+    ) {
+      continue;
+    }
+    (result as unknown as Record<string, number>)[part.type] = numericValue;
   }
 
   return result;
-};
+}
 
-const extractIntlComponents = (
+function utcStamp(wall: DateParts): number {
+  return (
+    partsStamp(
+      wall.year,
+      wall.month,
+      wall.day,
+      wall.hour,
+      wall.minute,
+      wall.second,
+      wall.millisecond,
+      true
+    ) ?? Number.NaN
+  );
+}
+
+function zoneSample(
   timestamp: number,
-  timezone: string,
-  locale: string,
-): DateTimeComponents => {
-  try {
-    const parts = createDateFormatter(locale, timezone).formatToParts(
-      new Date(timestamp),
-    );
-    const parsedComponents = parseFormatterParts(parts);
+  formatter: Intl.DateTimeFormat
+): { components: DateParts; offsetMs: number } {
+  const date = new Date(timestamp);
+  const parts = formatter.formatToParts(date);
+  const parsed = parseParts(parts);
 
-    parsedComponents.millisecond =
-      ((timestamp % MILLISECOND.SECOND) + MILLISECOND.SECOND) %
-      MILLISECOND.SECOND;
+  parsed.millisecond = date.getUTCMilliseconds();
 
-    return parsedComponents;
-  } catch {
-    return extractUtcComponents(timestamp);
-  }
-};
+  const wallStamp = utcStamp(parsed);
+  return { components: parsed, offsetMs: wallStamp - timestamp };
+}
 
-const parseTimezoneComponents = (
+function parseZoneParts(
   timestamp: number,
-  timezone: string,
-  locale: string,
-): DateTimeComponents => {
-  if (isUtcTimezone(timezone)) return extractUtcComponents(timestamp);
-  if (timezone === resolveTimezone) return extractLocalComponents(timestamp);
+  zone: string,
+  locale: string
+): DateParts {
+  if (zone === "UTC") return utcParts(timestamp);
 
-  const chunkId = Math.floor(timestamp / (15 * MILLISECOND.MINUTE));
-  const cacheKey = `${timezone}$${String(chunkId)}`;
+  const formatter = formatterFor(locale, zone);
+  const sample = (value: number) => zoneSample(value, formatter);
+
+  // cache offsets in 15-mins chunks.
+  const chunkIndex = Math.floor(timestamp / OFFSET_CHUNK);
+  const cacheKey = zone + "$" + String(chunkIndex);
+
   const cachedOffset = offsetCache.get(cacheKey);
-
   if (cachedOffset !== undefined) {
-    return extractUtcComponents(timestamp + cachedOffset);
+    if (Number.isNaN(cachedOffset)) return sample(timestamp).components;
+    return utcParts(timestamp + cachedOffset);
   }
 
-  // cache miss: calculate offset using Intl path
-  const components = extractIntlComponents(timestamp, timezone, locale);
-  // calculate offset
-  const utcRepresentation = Date.UTC(
-    components.year,
-    components.month - 1,
-    components.day,
-    components.hour,
-    components.minute,
-    components.second,
-    components.millisecond,
+  const currentSample = sample(timestamp);
+  const chunkStart = chunkIndex * OFFSET_CHUNK;
+  const chunkEnd = chunkStart + OFFSET_CHUNK - 1;
+
+  const startOffset =
+    chunkStart === timestamp
+      ? currentSample.offsetMs
+      : sample(chunkStart).offsetMs;
+  const endOffset =
+    chunkEnd === timestamp ? currentSample.offsetMs : sample(chunkEnd).offsetMs;
+
+  offsetCache.set(
+    cacheKey,
+    startOffset === endOffset ? currentSample.offsetMs : Number.NaN
   );
 
-  // calculate offset by comparing the "wall time" (constructed as UTC) with the actual timestamp.
-  // we preserve millisecond precision to ensure accuracy, avoiding rounding issues.
-  const offset = utcRepresentation - timestamp;
+  return currentSample.components;
+}
 
-  offsetCache.set(cacheKey, offset);
-
-  return components;
-};
-
-const calcTimezoneOffset = (
+function zoneOffsetSeconds(
   timestamp: number,
-  timezone: string,
-  locale = defaultLocale.code,
-): number => {
-  if (isUtcTimezone(timezone)) return 0;
-  if (timezone === resolveTimezone)
-    return -new Date(timestamp).getTimezoneOffset(); // fast path for local time
+  zone: string,
+  locale: string
+): number {
+  if (zone === "UTC") return 0;
 
-  try {
-    const { year, month, day, hour, minute, second, millisecond } =
-      parseTimezoneComponents(timestamp, timezone, locale);
-    const utcTime = Date.UTC(
-      year,
-      month - 1,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-    );
-    const truncatedTimestamp =
-      Math.trunc(timestamp / MILLISECOND.SECOND) * MILLISECOND.SECOND;
-    const offsetMs = utcTime - truncatedTimestamp;
-    const offsetMinutes = offsetMs / MILLISECOND.MINUTE;
-
-    // some timezones have 15-mins offsets (e.g. Nepal, Chatham)
-    return Math.round(offsetMinutes * 4) / 4;
-  } catch {
-    return 0;
-  }
-};
-
-const correctTimezoneOffset = (
-  local: number,
-  offsetEstimate: number,
-  timezone: string,
-): [number, number] => {
-  if (isUtcTimezone(timezone)) return [local, 0];
-
-  try {
-    let estimatedUtc = local - offsetEstimate * MILLISECOND.MINUTE;
-
-    const initialOffset = calcTimezoneOffset(
-      estimatedUtc,
-      timezone,
-      defaultLocale.code,
-    );
-
-    // DST transitions can be tricky, exact match saves computation
-    if (offsetEstimate === initialOffset) return [estimatedUtc, offsetEstimate];
-
-    // DST can shift by 1 hour, so we refine the calculation
-    estimatedUtc -= (initialOffset - offsetEstimate) * MILLISECOND.MINUTE;
-
-    const refinedOffset = calcTimezoneOffset(
-      estimatedUtc,
-      timezone,
-      defaultLocale.code,
-    );
-    // pick the smaller offset to avoid double-counting DST
-    const finalOffset =
-      initialOffset === refinedOffset
-        ? initialOffset
-        : Math.min(initialOffset, refinedOffset);
-
-    return [local - finalOffset * MILLISECOND.MINUTE, finalOffset];
-  } catch {
-    return [local, offsetEstimate];
-  }
-};
-
-const convertToUtc = (
-  values: readonly number[],
-  timezone: string,
-  contextTimestamp: number,
-): number => {
-  const [year, month, day, hour, minute, second, millisecond] = values;
-  const baseUtcTime = Date.UTC(
-    year,
-    month - 1,
-    day,
-    hour,
-    minute,
-    second,
-    millisecond,
+  // offset = wall time - utc time
+  return Math.round(
+    (utcStamp(parseZoneParts(timestamp, zone, locale)) - timestamp) / MS_SECOND
   );
+}
 
-  if (isUtcTimezone(timezone)) return baseUtcTime;
+function wallToUtc(
+  wall: DateParts,
+  zone: string,
+  locale: string,
+  contextTimestamp?: number
+): number {
+  const wallTimestamp = utcStamp(wall);
 
-  try {
-    const [correctedUtcTime] = correctTimezoneOffset(
-      baseUtcTime,
-      calcTimezoneOffset(contextTimestamp, timezone, defaultLocale.code),
-      timezone,
+  if (zone === "UTC") return wallTimestamp;
+
+  // first, estimate from context.
+  const firstOffset = zoneOffsetSeconds(
+    contextTimestamp ?? wallTimestamp,
+    zone,
+    locale
+  );
+  let estimatedUtc = wallTimestamp - firstOffset * MS_SECOND;
+
+  const checkOffset = zoneOffsetSeconds(estimatedUtc, zone, locale);
+
+  if (checkOffset === firstOffset) return estimatedUtc;
+
+  // refine when the first estimate crossed an offset boundary.
+  estimatedUtc -= (checkOffset - firstOffset) * MS_SECOND;
+
+  // resolve ambiguous fall-back transitions by preferring the smaller offset.
+  const refinedOffset = zoneOffsetSeconds(estimatedUtc, zone, locale);
+  return (
+    wallTimestamp -
+    (checkOffset === refinedOffset
+      ? checkOffset
+      : Math.min(checkOffset, refinedOffset)) *
+      MS_SECOND
+  );
+}
+
+function sameParts(left: DateParts, right: DateParts): boolean {
+  return (
+    left.year === right.year &&
+    left.month === right.month &&
+    left.day === right.day &&
+    left.hour === right.hour &&
+    left.minute === right.minute &&
+    left.second === right.second &&
+    left.millisecond === right.millisecond
+  );
+}
+
+function resolveDisambiguation(value: unknown): Disambiguation {
+  if (
+    value === "compatible" ||
+    value === "earlier" ||
+    value === "later" ||
+    value === "reject"
+  ) {
+    return value;
+  }
+  throw new RangeError("Invalid time-zone disambiguation.");
+}
+
+function resolveWallTime(
+  wall: DateParts,
+  zone: string,
+  locale: string,
+  disambiguation: Disambiguation
+): number {
+  const wallTimestamp = utcStamp(wall);
+  if (!isTimestamp(wallTimestamp)) throw new RangeError("Invalid wall time.");
+  if (zone === "UTC") return wallTimestamp;
+
+  const offsets = new Set<number>();
+  for (let hours = -48; hours <= 48; hours += 1) {
+    const sampleTimestamp = wallTimestamp + hours * MS_HOUR;
+    if (!isTimestamp(sampleTimestamp)) continue;
+
+    const offset = zoneOffsetSeconds(sampleTimestamp, zone, locale);
+    if (Number.isFinite(offset)) offsets.add(offset);
+  }
+
+  const candidates: number[] = [];
+  const nearby: { timestamp: number; wallTimestamp: number }[] = [];
+
+  for (const offset of offsets) {
+    const timestamp = wallTimestamp - offset * MS_SECOND;
+    if (!isTimestamp(timestamp)) continue;
+
+    const actual = parseZoneParts(timestamp, zone, locale);
+    const actualWallTimestamp = utcStamp(actual);
+    if (sameParts(actual, wall)) candidates.push(timestamp);
+    else if (isTimestamp(actualWallTimestamp)) {
+      nearby.push({ timestamp, wallTimestamp: actualWallTimestamp });
+    }
+  }
+
+  candidates.sort((left, right) => left - right);
+  if (candidates.length > 0) {
+    if (disambiguation === "reject" && candidates.length > 1) {
+      throw new RangeError("Ambiguous wall time.");
+    }
+    const selected =
+      disambiguation === "later"
+        ? candidates[candidates.length - 1]
+        : candidates[0];
+    if (selected === undefined) throw new RangeError("Nonexistent wall time.");
+    return selected;
+  }
+
+  if (disambiguation === "reject") {
+    throw new RangeError("Nonexistent wall time.");
+  }
+
+  const isEarlier = disambiguation === "earlier";
+  const matches = nearby
+    .filter(({ wallTimestamp: actual }) =>
+      isEarlier ? actual < wallTimestamp : actual > wallTimestamp
+    )
+    .sort((left, right) =>
+      isEarlier
+        ? right.wallTimestamp - left.wallTimestamp
+        : left.wallTimestamp - right.wallTimestamp
     );
 
-    return correctedUtcTime;
-  } catch {
-    return baseUtcTime;
-  }
-};
+  const match = matches[0];
+  if (!match) throw new RangeError("Nonexistent wall time.");
+  return match.timestamp;
+}
 
-const calcDayOfWeek = (year: number, month: number, day: number): number =>
-  new Date(year, month - 1, day).getDay();
+type Calendar = "month" | "year";
 
-const calcWeekBoundary = (
-  timestamp: number,
-  locale: Locale,
-  timezone: string,
-  isEnd: boolean,
-): number => {
-  const { year, month, day } = parseTimezoneComponents(
-    timestamp,
-    timezone,
-    locale.code,
-  );
-  const currentDayOfWeek = calcDayOfWeek(year, month, day);
-  const weekStart = locale.calendar.weekStart ?? 1; // monday (ISO 8601 standard)
-  const daysFromWeekStart = (currentDayOfWeek - weekStart + 7) % 7; // prevents negative modulo
-  const offsetDays = isEnd ? 6 - daysFromWeekStart : -daysFromWeekStart;
-  const baseDate = new Date(year, month - 1, day);
+function isLeapYear(year: number): boolean {
+  return !(year & 3) && (year % 100 !== 0 || year % 400 === 0);
+}
 
-  baseDate.setDate(baseDate.getDate() + offsetDays);
-  baseDate.setHours(isEnd ? 23 : 0);
-  baseDate.setMinutes(isEnd ? 59 : 0);
-  baseDate.setSeconds(isEnd ? 59 : 0);
-  baseDate.setMilliseconds(isEnd ? 999 : 0);
+function monthEnd(year: number, month: number, utc: boolean): number {
+  return utc
+    ? new Date(Date.UTC(year, month, 0)).getUTCDate()
+    : new Date(year, month, 0).getDate();
+}
 
-  const boundaryComponents = [
-    baseDate.getFullYear(),
-    baseDate.getMonth() + 1,
-    baseDate.getDate(),
-    baseDate.getHours(),
-    baseDate.getMinutes(),
-    baseDate.getSeconds(),
-    baseDate.getMilliseconds(),
-  ];
-
-  return convertToUtc(boundaryComponents, timezone, timestamp);
-};
-
-const setDateField = (
-  date: Date,
-  field: string,
-  value: number,
-  isUtc: boolean,
-): void => {
-  switch (field) {
-    case 'year': {
-      if (isUtc) date.setUTCFullYear(value);
-      else date.setFullYear(value);
-      break;
-    }
-
-    case 'month': {
-      if (isUtc) date.setUTCMonth(value - 1);
-      else date.setMonth(value - 1);
-      break;
-    }
-
-    case 'day': {
-      if (isUtc) date.setUTCDate(value);
-      else date.setDate(value);
-      break;
-    }
-
-    case 'hour': {
-      if (isUtc) date.setUTCHours(value);
-      else date.setHours(value);
-      break;
-    }
-
-    case 'minute': {
-      if (isUtc) date.setUTCMinutes(value);
-      else date.setMinutes(value);
-      break;
-    }
-
-    case 'second': {
-      if (isUtc) date.setUTCSeconds(value);
-      else date.setSeconds(value);
-      break;
-    }
-
-    case 'millisecond': {
-      if (isUtc) date.setUTCMilliseconds(value);
-      else date.setMilliseconds(value);
-      break;
-    }
-  }
-};
-
-const adjustDateComponent = (
+function clampCalendar(
   date: Date,
   value: number,
-  unit: ArithmeticUnit,
-  isUtc = false,
-): void => {
-  const components = extractComponents(date, isUtc);
+  unit: Calendar,
+  utc: boolean
+): void {
+  if (unit === "year") {
+    const currentYear = utc ? date.getUTCFullYear() : date.getFullYear();
+    const currentMonth = utc ? date.getUTCMonth() : date.getMonth();
+    const currentDay = utc ? date.getUTCDate() : date.getDate();
 
-  if (unit === 'year') {
-    const newYear = components.year + value;
+    const targetYear = currentYear + value;
 
-    if (components.month === 2 && components.day === 29 && !leapYear(newYear))
-      setDateField(date, 'day', 28, isUtc); // february 29th in non-leap year
+    if (currentMonth === 1 && currentDay === 29 && !isLeapYear(targetYear)) {
+      if (utc) date.setUTCDate(28);
+      else date.setDate(28);
+    }
 
-    setDateField(date, 'year', newYear, isUtc);
-
+    if (utc) date.setUTCFullYear(targetYear);
+    else date.setFullYear(targetYear);
     return;
   }
 
-  if (unit === 'month') {
-    const targetMonth = components.month + value;
+  const currentDay = utc ? date.getUTCDate() : date.getDate();
+  const currentMonth = utc ? date.getUTCMonth() : date.getMonth();
 
-    setDateField(date, 'day', 1, isUtc);
-    setDateField(date, 'month', targetMonth, isUtc);
-
-    const { year, month } = extractComponents(date, isUtc);
-    const lastDayOfMonth = calcLastDayOfMonth(year, month, isUtc);
-    const validatedDay = Math.min(components.day, lastDayOfMonth); // no day 31 in february
-
-    setDateField(date, 'day', validatedDay, isUtc);
-
-    return;
+  if (utc) {
+    date.setUTCDate(1);
+    date.setUTCMonth(currentMonth + value);
+  } else {
+    date.setDate(1);
+    date.setMonth(currentMonth + value);
   }
 
-  const amount = value * TIME_UNITS[unit];
-  const newTimestamp = date.getTime() + amount;
-
-  date.setTime(newTimestamp);
-};
-
-const calcLastDayOfMonth = (
-  year: number,
-  month: number,
-  isUtc = false,
-): number =>
-  isUtc
-    ? new Date(Date.UTC(year, month, 0)).getUTCDate() // day 0 = last day of previous month
-    : new Date(year, month, 0).getDate(); // elegant JS trick, works universally
-
-const calcBoundaryTimestamp = (
-  timestamp: number,
-  unit: BoundaryUnit,
-  end: boolean,
-  locale: Locale,
-  timezone?: string,
-): number => {
-  const resolvedTimezone = timezone ?? resolveTimezone;
-
-  if (unit === 'week') {
-    try {
-      return calcWeekBoundary(timestamp, locale, resolvedTimezone, end);
-    } catch {
-      return timestamp;
-    }
-  }
-
-  const { year, month, day, hour, minute, second, millisecond } =
-    parseTimezoneComponents(timestamp, resolvedTimezone, locale.code);
-  const components = [year, month, day, hour, minute, second, millisecond];
-
-  switch (unit) {
-    case 'second': {
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    case 'minute': {
-      components[5] = end ? 59 : 0;
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    case 'hour': {
-      components[4] = end ? 59 : 0;
-      components[5] = end ? 59 : 0;
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    case 'day': {
-      components[3] = end ? 23 : 0;
-      components[4] = end ? 59 : 0;
-      components[5] = end ? 59 : 0;
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    case 'month': {
-      components[2] = end ? calcLastDayOfMonth(year, month) : 1;
-      components[3] = end ? 23 : 0;
-      components[4] = end ? 59 : 0;
-      components[5] = end ? 59 : 0;
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    case 'year': {
-      components[1] = end ? 12 : 1;
-      components[2] = end ? calcLastDayOfMonth(year, 12) : 1;
-      components[3] = end ? 23 : 0;
-      components[4] = end ? 59 : 0;
-      components[5] = end ? 59 : 0;
-      components[6] = end ? 999 : 0;
-      break;
-    }
-
-    default: {
-      return timestamp;
-    }
-  }
-
-  try {
-    return convertToUtc(components, resolvedTimezone, timestamp);
-  } catch {
-    return timestamp;
-  }
-};
-
-const setFieldWithTimezone = (
-  inst: Instance,
-  value: number,
-  field: ComponentUnit,
-): Waktos => {
-  const isUtc = isUtcTimezone(inst._timezone);
-
-  if (isUtc) {
-    const date = new Date(inst._timestamp);
-
-    if (field === 'month') {
-      const currentDay = date.getUTCDate();
-      const currentYear = date.getUTCFullYear();
-      const lastDayOfTargetMonth = calcLastDayOfMonth(currentYear, value, true);
-
-      if (currentDay > lastDayOfTargetMonth) {
-        date.setUTCDate(lastDayOfTargetMonth);
-      }
-    }
-
-    setDateField(date, field, value, true);
-
-    return createInstance(date.getTime(), inst._locale, inst._timezone);
-  }
-
-  const parts = createDateFormatter(
-    inst._locale.code,
-    inst._timezone,
-  ).formatToParts(new Date(inst._timestamp));
-  const parsedComponents = parseFormatterParts(parts);
-  const values = [
-    field === 'year' ? value : parsedComponents.year,
-    field === 'month' ? value : parsedComponents.month,
-    field === 'day' ? value : parsedComponents.day,
-    field === 'hour' ? value : parsedComponents.hour,
-    field === 'minute' ? value : parsedComponents.minute,
-    field === 'second' ? value : parsedComponents.second,
-    field === 'millisecond' ? value : parsedComponents.millisecond,
-  ];
-
-  if (field === 'month' || field === 'day') {
-    const targetYear = values[0];
-    const targetMonth = values[1];
-    const targetDay = values[2];
-    const lastDayOfMonth = calcLastDayOfMonth(targetYear, targetMonth);
-
-    if (targetDay > lastDayOfMonth) {
-      values[2] = lastDayOfMonth;
-    }
-  }
-
-  return createInstance(
-    convertToUtc(values, inst._timezone, inst._timestamp),
-    inst._locale,
-    inst._timezone,
+  const lastDay = monthEnd(
+    utc ? date.getUTCFullYear() : date.getFullYear(),
+    (utc ? date.getUTCMonth() : date.getMonth()) + 1,
+    utc
   );
+
+  const targetDay = Math.min(currentDay, lastDay);
+  if (utc) date.setUTCDate(targetDay);
+  else date.setDate(targetDay);
+}
+
+function shiftZone(
+  timestamp: number,
+  duration: CanonicalDuration,
+  zone: string,
+  locale: string,
+  direction: 1 | -1
+): number {
+  const milliseconds = duration.millisecond ?? 0;
+  const seconds = duration.second ?? 0;
+  const minutes = duration.minute ?? 0;
+  const hours = duration.hour ?? 0;
+
+  const elapsedMs =
+    milliseconds + seconds * MS_SECOND + minutes * MS_MINUTE + hours * MS_HOUR;
+
+  const shiftedStamp = timestamp + direction * elapsedMs;
+
+  const dayShift = duration.day ?? 0;
+  const monthShift = duration.month ?? 0;
+  const yearShift = duration.year ?? 0;
+
+  if (dayShift === 0 && monthShift === 0 && yearShift === 0) {
+    return shiftedStamp;
+  }
+
+  if (zone === "UTC") {
+    const utcDate = new Date(shiftedStamp);
+
+    if (dayShift !== 0)
+      utcDate.setUTCDate(utcDate.getUTCDate() + direction * dayShift);
+    if (monthShift !== 0)
+      clampCalendar(utcDate, direction * monthShift, "month", true);
+    if (yearShift !== 0)
+      clampCalendar(utcDate, direction * yearShift, "year", true);
+
+    return utcDate.getTime();
+  }
+
+  const shiftedWall = parseZoneParts(shiftedStamp, zone, locale);
+  const wallDate = new Date(
+    Date.UTC(
+      shiftedWall.year,
+      shiftedWall.month - 1,
+      shiftedWall.day,
+      shiftedWall.hour,
+      shiftedWall.minute,
+      shiftedWall.second,
+      shiftedWall.millisecond
+    )
+  );
+
+  if (dayShift !== 0)
+    wallDate.setUTCDate(wallDate.getUTCDate() + direction * dayShift);
+  if (monthShift !== 0)
+    clampCalendar(wallDate, direction * monthShift, "month", true);
+  if (yearShift !== 0)
+    clampCalendar(wallDate, direction * yearShift, "year", true);
+
+  return wallToUtc(
+    {
+      year: wallDate.getUTCFullYear(),
+      month: wallDate.getUTCMonth() + 1,
+      day: wallDate.getUTCDate(),
+      hour: wallDate.getUTCHours(),
+      minute: wallDate.getUTCMinutes(),
+      second: wallDate.getUTCSeconds(),
+      millisecond: wallDate.getUTCMilliseconds()
+    },
+    zone,
+    locale,
+    shiftedStamp
+  );
+}
+
+function diffCalendar(
+  leftTimestamp: number,
+  rightTimestamp: number,
+  zone: string,
+  locale: string,
+  unit: Calendar,
+  leftComponents?: DateParts,
+  rightComponents?: DateParts
+): number {
+  const leftWall =
+    leftComponents ?? parseZoneParts(leftTimestamp, zone, locale);
+  const rightWall =
+    rightComponents ?? parseZoneParts(rightTimestamp, zone, locale);
+
+  let unitDiff =
+    unit === "year"
+      ? leftWall.year - rightWall.year
+      : (leftWall.year - rightWall.year) * 12 +
+        (leftWall.month - rightWall.month);
+
+  if (unitDiff === 0) return 0;
+
+  const anchoredTimestamp = shiftZone(
+    rightTimestamp,
+    unit === "year" ? { year: unitDiff } : { month: unitDiff },
+    zone,
+    locale,
+    1
+  );
+
+  if (leftTimestamp >= rightTimestamp) {
+    if (anchoredTimestamp > leftTimestamp) unitDiff -= 1;
+    return unitDiff;
+  }
+
+  if (anchoredTimestamp < leftTimestamp) unitDiff += 1;
+
+  return unitDiff;
+}
+
+const CANONICAL_MAP: Record<CanonicalUnit, 1> = {
+  millisecond: 1,
+  second: 1,
+  minute: 1,
+  hour: 1,
+  day: 1,
+  month: 1,
+  year: 1
 };
 
-const formatTimezoneOffset = (offset: number, z = false): string => {
-  if (offset === 0) return z ? 'GMT' : 'Z';
+function normalizeUnit(unit: Unit): CanonicalUnit {
+  const key = unit.trim().toLowerCase();
 
-  const sign = offset > 0 ? '+' : '-';
-  const absOffset = Math.abs(offset);
-  const hours = Math.floor(absOffset / 60)
-    .toString()
-    .padStart(2, '0');
-  const minutes = (absOffset % 60).toString().padStart(2, '0');
+  if (key in CANONICAL_MAP) {
+    return key as CanonicalUnit;
+  }
 
-  return z
-    ? `GMT${sign}${hours}:${minutes}` // human-readable
-    : `${sign}${hours}:${minutes}`; // machine-readable
+  if (key.endsWith("s")) {
+    const singular = key.slice(0, -1);
+    if (singular in CANONICAL_MAP) {
+      return singular as CanonicalUnit;
+    }
+  }
+
+  throw new RangeError("Invalid unit.");
+}
+
+function normalizeDuration(duration: Duration): CanonicalDuration {
+  if (typeof duration !== "object") {
+    throw new TypeError("Invalid duration.");
+  }
+
+  const normalized: CanonicalDuration = {};
+
+  for (const [rawUnit, value] of Object.entries(duration)) {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new RangeError("Invalid duration value.");
+    }
+
+    const unit = normalizeUnit(rawUnit as Unit);
+
+    normalized[unit] = (normalized[unit] ?? 0) + value;
+  }
+
+  return normalized;
+}
+
+const patternCache = new Cache<string, readonly PatternFn[]>(24);
+
+const TOKEN_REGEX =
+  /\[([^\]]+)\]|YYYY|YY|Q|MM|M|DD|D|HH|H|hh|h|mm|m|ss|s|SSS|ZZ|Z|X|x/g;
+
+function formatOffset(seconds: number, compact = false): string {
+  const sign = seconds >= 0 ? "+" : "-";
+  const abs = Math.abs(seconds);
+
+  const hour = Math.floor(abs / 3600);
+  const minute = Math.floor((abs % 3600) / 60);
+  const second = abs % 60;
+  const separator = compact ? "" : ":";
+
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  const prefix = `${sign}${hh}${separator}${mm}`;
+
+  if (second === 0) return prefix;
+  return `${prefix}${separator}${String(second).padStart(2, "0")}`;
+}
+
+const TOKEN_FORMATTERS: Record<string, PatternFn> = {
+  YYYY: (component) => String(component.year).padStart(4, "0"),
+  YY: (component) => String(component.year).slice(-2),
+
+  MM: (component) => String(component.month).padStart(2, "0"),
+  M: (component) => String(component.month),
+  Q: (component) => String(Math.ceil(component.month / 3)),
+
+  DD: (component) => String(component.day).padStart(2, "0"),
+  D: (component) => String(component.day),
+
+  HH: (component) => String(component.hour).padStart(2, "0"),
+  H: (component) => String(component.hour),
+  hh: (component) => String(component.hour % 12 || 12).padStart(2, "0"),
+  h: (component) => String(component.hour % 12 || 12),
+
+  mm: (component) => String(component.minute).padStart(2, "0"),
+  m: (component) => String(component.minute),
+
+  ss: (component) => String(component.second).padStart(2, "0"),
+  s: (component) => String(component.second),
+
+  SSS: (component) => String(component.millisecond).padStart(3, "0"),
+  X: (_, timestamp) => String(Math.floor(timestamp / MS_SECOND)),
+  x: (_, timestamp) => String(timestamp),
+
+  ZZ: (_, timestamp, zone, locale) =>
+    formatOffset(zoneOffsetSeconds(timestamp, zone, locale), true),
+  Z: (_, timestamp, zone, locale) =>
+    formatOffset(zoneOffsetSeconds(timestamp, zone, locale))
 };
 
-const formatNumber = (n: number, pad = 0): string =>
-  String(n).padStart(pad, '0');
-
-const compilePattern = (pattern: string, locale: Locale): Formatter[] => {
-  const parts: Formatter[] = [];
-
-  let lastIndex = 0;
-  let match;
+function compilePattern(pattern: string): readonly PatternFn[] {
+  const parts: PatternFn[] = [];
+  let fromIndex = 0;
 
   TOKEN_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null = TOKEN_REGEX.exec(pattern);
 
-  while ((match = TOKEN_REGEX.exec(pattern)) !== null) {
-    if (match.index > lastIndex) {
-      const staticText = pattern.slice(lastIndex, match.index);
+  while (match !== null) {
+    const tokenStart = match.index;
+    const token = match[0];
+    const escaped = match[1];
 
+    if (tokenStart > fromIndex) {
+      const staticText = pattern.slice(fromIndex, tokenStart);
       parts.push(() => staticText);
     }
 
-    const token = match[0];
-    const literal = match[1];
-
-    if (literal) {
-      parts.push(() => literal);
+    if (escaped !== undefined) {
+      parts.push(() => escaped);
     } else {
-      switch (token) {
-        case 'YYYY': {
-          parts.push((nums) => formatNumber(nums.year, 4));
-          break;
-        }
-        case 'YY': {
-          parts.push((nums) => String(nums.year).slice(-2));
-          break;
-        }
-        case 'MMMM': {
-          parts.push(
-            (nums) => locale.calendar.labels.months.full[nums.month - 1] ?? '',
-          );
-          break;
-        }
-        case 'MMM': {
-          parts.push(
-            (nums) => locale.calendar.labels.months.abbr[nums.month - 1] ?? '',
-          );
-          break;
-        }
-        case 'MM': {
-          parts.push((nums) => formatNumber(nums.month, 2));
-          break;
-        }
-        case 'M': {
-          parts.push((nums) => formatNumber(nums.month));
-          break;
-        }
-        case 'Do': {
-          parts.push(
-            (nums) =>
-              locale.format.ordinal?.(formatNumber(nums.day)) ??
-              formatNumber(nums.day),
-          );
-          break;
-        }
-        case 'DD': {
-          parts.push((nums) => formatNumber(nums.day, 2));
-          break;
-        }
-        case 'D': {
-          parts.push((nums) => formatNumber(nums.day));
-          break;
-        }
-        case 'dddd': {
-          parts.push(
-            (nums) =>
-              locale.calendar.labels.weekdays.full[
-                calcDayOfWeek(nums.year, nums.month, nums.day)
-              ] ?? '',
-          );
-          break;
-        }
-        case 'ddd': {
-          parts.push(
-            (nums) =>
-              locale.calendar.labels.weekdays.abbr[
-                calcDayOfWeek(nums.year, nums.month, nums.day)
-              ] ?? '',
-          );
-          break;
-        }
-        case 'HH': {
-          parts.push((nums) => formatNumber(nums.hour, 2));
-          break;
-        }
-        case 'H': {
-          parts.push((nums) => formatNumber(nums.hour));
-          break;
-        }
-        case 'hh': {
-          parts.push((nums) => {
-            const h = nums.hour % 12 || 12;
-
-            return formatNumber(h, 2);
-          });
-          break;
-        }
-        case 'h': {
-          parts.push((nums) => formatNumber(nums.hour % 12 || 12));
-          break;
-        }
-        case 'mm': {
-          parts.push((nums) => formatNumber(nums.minute, 2));
-          break;
-        }
-        case 'm': {
-          parts.push((nums) => formatNumber(nums.minute));
-          break;
-        }
-        case 'ss': {
-          parts.push((nums) => formatNumber(nums.second, 2));
-          break;
-        }
-        case 's': {
-          parts.push((nums) => formatNumber(nums.second));
-          break;
-        }
-        case 'SSS': {
-          parts.push((nums) => formatNumber(nums.millisecond, 3));
-          break;
-        }
-        case 'A': {
-          parts.push((nums) => (nums.hour >= 12 ? 'PM' : 'AM'));
-          break;
-        }
-        case 'a': {
-          parts.push((nums) => (nums.hour >= 12 ? 'pm' : 'am'));
-          break;
-        }
-        case 'ZZ':
-        case 'Z': {
-          const isZZ = token === 'ZZ';
-
-          parts.push((_nums, _locale, ts, tz) => {
-            const offset = calcTimezoneOffset(ts, tz, _locale.code);
-
-            return formatTimezoneOffset(offset, isZZ);
-          });
-          break;
-        }
-        default: {
-          parts.push(() => token);
-        }
-      }
+      const formatter = TOKEN_FORMATTERS[token];
+      if (formatter) parts.push(formatter);
     }
 
-    lastIndex = TOKEN_REGEX.lastIndex;
+    fromIndex = TOKEN_REGEX.lastIndex;
+    match = TOKEN_REGEX.exec(pattern);
   }
 
-  if (lastIndex < pattern.length) {
-    const tail = pattern.slice(lastIndex);
-
-    parts.push(() => tail);
+  if (fromIndex < pattern.length) {
+    const remainingText = pattern.slice(fromIndex);
+    parts.push(() => remainingText);
   }
 
   return parts;
-};
-
-const formatByPattern = (
-  timestamp: number,
-  locale: Locale,
-  timezone?: string,
-  pattern?: string,
-): string => {
-  const finalPattern = pattern ?? locale.format.patterns.default;
-  const cacheKey = createCacheKey(locale.code, finalPattern);
-
-  let formatters = compiledFormatterCache.get(cacheKey);
-
-  if (!formatters) {
-    formatters = compilePattern(finalPattern, locale);
-    compiledFormatterCache.set(cacheKey, formatters);
-  }
-
-  const resolvedTimezone = timezone ?? resolveTimezone;
-  const isUtc = isUtcTimezone(resolvedTimezone);
-  const nums = isUtc
-    ? extractUtcComponents(timestamp)
-    : parseTimezoneComponents(timestamp, resolvedTimezone, locale.code);
-
-  let result = ''; // fast path execution
-
-  for (const formatter of formatters) {
-    result += formatter(nums, locale, timestamp, resolvedTimezone);
-  }
-
-  const finalResult = locale.format.numeral
-    ? locale.format.numeral(result)
-    : result;
-
-  return locale.rtl ? `\u202B${finalResult}\u202C` : finalResult;
-};
-
-const core = {
-  _timestamp: 0,
-  _locale: defaultLocale,
-  _timezone: resolveTimezone,
-  _cache: initCacheState(),
-  _extractComponents(): DateTimeComponents {
-    if (
-      isCacheValid(
-        this._cache,
-        this._timestamp,
-        this._timezone,
-        this._locale.code,
-      )
-    ) {
-      return this._cache.components;
-    }
-
-    const isUtc = isUtcTimezone(this._timezone);
-    const components = isUtc
-      ? this._extractUtcComponents(this._timestamp)
-      : this._extractTimezoneComponents(
-          this._timestamp,
-          this._timezone,
-          this._locale.code,
-        );
-
-    this._cache = {
-      timestamp: this._timestamp,
-      timezone: this._timezone,
-      locale: this._locale.code,
-      components,
-    };
-
-    return components;
-  },
-
-  _extractUtcComponents(timestamp: number): DateTimeComponents {
-    return extractUtcComponents(timestamp);
-  },
-
-  _extractTimezoneComponents(
-    timestamp: number,
-    timezone: string,
-    locale?: string,
-  ): DateTimeComponents {
-    return parseTimezoneComponents(
-      timestamp,
-      timezone,
-      locale ?? this._locale.code,
-    );
-  },
-
-  _calcBoundary(
-    timestamp: number,
-    unit: BoundaryUnit,
-    end: boolean,
-    locale: Locale,
-    timezone?: string,
-  ): number {
-    return calcBoundaryTimestamp(timestamp, unit, end, locale, timezone);
-  },
-
-  _adjustDate(
-    date: Date,
-    value: number,
-    unit: ArithmeticUnit,
-    isUtc = false,
-  ): void {
-    adjustDateComponent(date, value, unit, isUtc);
-  },
-
-  _setField(value: number, field: ComponentUnit): Waktos {
-    return setFieldWithTimezone(this as Instance, value, field);
-  },
-
-  valueOf(): number {
-    return this._timestamp;
-  },
-
-  shift(value: number, unit: ArithmeticUnit): Waktos {
-    const multiplier = TIME_UNITS[unit];
-    const isUtc = isUtcTimezone(this._timezone);
-
-    if (multiplier > 0 && (isUtc || !TIME_SENSITIVE_UNITS.has(unit))) {
-      return createInstance(
-        this._timestamp + value * multiplier,
-        this._locale,
-        this._timezone,
-      );
-    }
-
-    if (isUtc && multiplier === 0) {
-      const date = new Date(this._timestamp);
-
-      if (DATE_UNITS.has(unit)) this._adjustDate(date, value, unit, true);
-
-      return createInstance(date.getTime(), this._locale, this._timezone);
-    }
-
-    const { year, month, day, hour, minute, second, millisecond } =
-      this._extractTimezoneComponents(
-        this._timestamp,
-        this._timezone,
-        this._locale.code,
-      );
-    const local = new Date(
-      year,
-      month - 1,
-      day,
-      hour,
-      minute,
-      second,
-      millisecond,
-    );
-
-    switch (unit) {
-      case 'hour': {
-        local.setHours(hour + value);
-        break;
-      }
-
-      case 'day': {
-        local.setDate(day + value);
-        break;
-      }
-
-      case 'month': {
-        this._adjustDate(local, value, 'month', false);
-        break;
-      }
-
-      case 'year': {
-        this._adjustDate(local, value, 'year', false);
-        break;
-      }
-    }
-
-    const localComponents = [
-      local.getFullYear(),
-      local.getMonth() + 1,
-      local.getDate(),
-      local.getHours(),
-      local.getMinutes(),
-      local.getSeconds(),
-      local.getMilliseconds(),
-    ] as const;
-
-    return createInstance(
-      convertToUtc(localComponents, this._timezone, this._timestamp),
-      this._locale,
-      this._timezone,
-    );
-  },
-
-  add(value: number, unit: ArithmeticUnit): Waktos {
-    return this.shift(value, unit);
-  },
-
-  sub(value: number, unit: ArithmeticUnit): Waktos {
-    return this.shift(-value, unit);
-  },
-
-  startOf(unit: BoundaryUnit): Waktos {
-    return createInstance(
-      this._calcBoundary(
-        this._timestamp,
-        unit,
-        false,
-        this._locale,
-        this._timezone,
-      ),
-      this._locale,
-      this._timezone,
-    );
-  },
-
-  endOf(unit: BoundaryUnit): Waktos {
-    return createInstance(
-      this._calcBoundary(
-        this._timestamp,
-        unit,
-        true,
-        this._locale,
-        this._timezone,
-      ),
-      this._locale,
-      this._timezone,
-    );
-  },
-
-  unix(): number {
-    return Math.floor(this._timestamp / MILLISECOND.SECOND);
-  },
-
-  toDate(): Date {
-    return new Date(this._timestamp);
-  },
-
-  toJSON(): string {
-    return new Date(this._timestamp).toISOString();
-  },
-
-  toString(): string {
-    return this.format(this._locale.format.patterns.toString);
-  },
-
-  toISOString(): string {
-    return new Date(this._timestamp).toISOString();
-  },
-
-  toDateString(): string {
-    return this.format('ddd MMM DD YYYY');
-  },
-
-  toTimeString(): string {
-    return this.format('HH:mm:ss ZZ');
-  },
-
-  toObject(): DateTimeComponents {
-    return this._extractComponents();
-  },
-
-  toArray(): [number, number, number, number, number, number, number] {
-    return Object.values(this._extractComponents()) as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-    ];
-  },
-
-  format(pattern?: string): string {
-    return formatByPattern(
-      this._timestamp,
-      this._locale,
-      this._timezone,
-      pattern,
-    );
-  },
-
-  locale(code: string): Waktos {
-    const resolvedLocale = getLocale(code) ?? defaultLocale;
-
-    return createInstance(this._timestamp, resolvedLocale, this._timezone);
-  },
-
-  timezone(zone: string): Waktos {
-    return createInstance(this._timestamp, this._locale, zone);
-  },
-
-  tz(zone: string): Waktos {
-    return this.timezone(zone);
-  },
-
-  year(value?: number) {
-    if (value === undefined) return this._extractComponents().year;
-
-    return this._setField(value, 'year');
-  },
-
-  month(value?: number) {
-    if (value === undefined) return this._extractComponents().month;
-
-    return this._setField(value, 'month');
-  },
-
-  day(value?: number) {
-    if (value === undefined) return this._extractComponents().day;
-
-    return this._setField(value, 'day');
-  },
-
-  hour(value?: number) {
-    if (value === undefined) return this._extractComponents().hour;
-
-    return this._setField(value, 'hour');
-  },
-
-  minute(value?: number) {
-    if (value === undefined) return this._extractComponents().minute;
-
-    return this._setField(value, 'minute');
-  },
-
-  second(value?: number) {
-    if (value === undefined) return this._extractComponents().second;
-
-    return this._setField(value, 'second');
-  },
-
-  millisecond(value?: number) {
-    if (value === undefined) return this._extractComponents().millisecond;
-
-    return this._setField(value, 'millisecond');
-  },
-
-  get(unit: ComponentUnit): number {
-    const components = this._extractComponents();
-
-    return components[unit as keyof DateTimeComponents];
-  },
-
-  set(
-    unitOrValues: ComponentUnit | Partial<DateTimeComponents>,
-    value?: number,
-  ): Waktos {
-    if (typeof unitOrValues === 'string' && value !== undefined)
-      return this._setField(value, unitOrValues);
-    if (typeof unitOrValues === 'object') {
-      let result = createInstance(
-        this._timestamp,
-        this._locale,
-        this._timezone,
-      );
-
-      for (const [key, val] of Object.entries(unitOrValues)) {
-        if (
-          typeof val === 'number' &&
-          COMPONENT_UNITS.has(key as ComponentUnit)
-        ) {
-          result = result.set(key as ComponentUnit, val);
-        }
-      }
-
-      return result;
-    }
-
-    return createInstance(this._timestamp, this._locale, this._timezone);
-  },
-
-  isBefore(date: DateInput, unit?: ComparisonUnit): boolean {
-    const compareTimestamp = parseInput(date);
-
-    if (!unit) return this._timestamp < compareTimestamp;
-    if (BOUNDARY_UNITS.has(unit as BoundaryUnit)) {
-      const thisStart = this.startOf(unit as BoundaryUnit);
-      const otherStart = createInstance(
-        compareTimestamp,
-        this._locale,
-        this._timezone,
-      ).startOf(unit as BoundaryUnit);
-
-      return thisStart.valueOf() < otherStart.valueOf();
-    }
-
-    const truncatedThis =
-      Math.trunc(this._timestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-    const truncatedOther =
-      Math.trunc(compareTimestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-
-    return truncatedThis < truncatedOther;
-  },
-
-  isAfter(date: DateInput, unit?: ComparisonUnit): boolean {
-    const compareTimestamp = parseInput(date);
-
-    if (!unit) return this._timestamp > compareTimestamp;
-    if (BOUNDARY_UNITS.has(unit as BoundaryUnit)) {
-      const thisStart = this.startOf(unit as BoundaryUnit);
-      const otherStart = createInstance(
-        compareTimestamp,
-        this._locale,
-        this._timezone,
-      ).startOf(unit as BoundaryUnit);
-
-      return thisStart.valueOf() > otherStart.valueOf();
-    }
-
-    const truncatedThis =
-      Math.trunc(this._timestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-    const truncatedOther =
-      Math.trunc(compareTimestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-
-    return truncatedThis > truncatedOther;
-  },
-
-  isSame(date: DateInput, unit?: ComparisonUnit): boolean {
-    const compareTimestamp = parseInput(date);
-
-    if (!unit) return this._timestamp === compareTimestamp;
-    if (BOUNDARY_UNITS.has(unit as BoundaryUnit)) {
-      const thisStart = this.startOf(unit as BoundaryUnit);
-      const otherStart = createInstance(
-        compareTimestamp,
-        this._locale,
-        this._timezone,
-      ).startOf(unit as BoundaryUnit);
-
-      return thisStart.valueOf() === otherStart.valueOf();
-    }
-
-    const truncatedThis =
-      Math.trunc(this._timestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-    const truncatedOther =
-      Math.trunc(compareTimestamp / TIME_UNITS[unit]) * TIME_UNITS[unit];
-
-    return truncatedThis === truncatedOther;
-  },
-
-  [Symbol.toPrimitive](hint: string): number | string {
-    if (hint === 'number') return this._timestamp;
-    if (hint === 'string') return this.toString();
-
-    return this._timestamp;
-  },
-};
-
-function waktos(date?: DateInput): Waktos {
-  if (date === undefined)
-    return createInstance(Date.now(), defaultLocale, undefined);
-
-  const timestamp = parseInput(date);
-
-  return createInstance(timestamp, defaultLocale, undefined);
 }
 
-waktos.isValid = (input: unknown): boolean => {
-  try {
-    if (input === undefined || input === null) return false;
+function formatPattern(
+  timestamp: number,
+  locale: string,
+  zone: string,
+  pattern: string,
+  components?: DateParts
+): string {
+  const resolvedComponents =
+    components ?? parseZoneParts(timestamp, zone, locale);
 
-    parseInput(input as DateInput);
+  let formatParts = patternCache.get(pattern);
+  if (!formatParts) {
+    formatParts = compilePattern(pattern);
+    patternCache.set(pattern, formatParts);
+  }
 
-    return true;
-  } catch {
-    return false;
+  let result = "";
+  for (const part of formatParts) {
+    result += part(resolvedComponents, timestamp, zone, locale);
+  }
+
+  return result;
+}
+
+const api: Api = {
+  createCache: <K, V>(size: number) => new Cache<K, V>(size),
+  parseInput,
+  normalizeUnit,
+  normalizeLocale,
+  parseZoneParts,
+  wallToUtc,
+  monthEnd,
+  constants: {
+    MS_SECOND,
+    MS_MINUTE,
+    MS_HOUR,
+    MS_DAY
   }
 };
 
-waktos.unix = (timestamp: number): Waktos => {
-  return createInstance(
-    timestamp * MILLISECOND.SECOND,
-    defaultLocale,
-    undefined,
-  );
-};
+export type Plugin = (waktos: typeof Waktos, api: Api) => void;
 
-waktos.utc = (date?: DateInput): Waktos => {
-  let timestamp: number;
+export interface Extensions {
+  readonly __extensions?: undefined;
+}
 
-  if (typeof date === 'string' && !/[Z]|[+-]\d{2}(?::?\d{2})?$/.test(date)) {
-    timestamp = parseInput(`${date}Z`);
-  } else {
-    timestamp = date === undefined ? Date.now() : parseInput(date);
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+class Waktos {
+  private readonly timestamp: number;
+  private readonly localeCode: string;
+  private readonly zoneCode: string;
+
+  private componentsCached?: DateParts;
+  private components(): DateParts {
+    const cached = this.componentsCached;
+    if (cached) return cached;
+
+    const components = parseZoneParts(
+      this.timestamp,
+      this.zoneCode,
+      this.localeCode
+    );
+
+    this.componentsCached = components;
+    return components;
   }
 
-  return createInstance(timestamp, defaultLocale, 'UTC');
-};
+  private contextParts(
+    input: DateInput | Waktos,
+    inputTimestamp: number
+  ): DateParts {
+    if (
+      input instanceof Waktos &&
+      input.zoneCode === this.zoneCode &&
+      input.localeCode === this.localeCode
+    ) {
+      return input.components();
+    }
 
-waktos.plugin = (...plugins: Plugin[]): typeof waktos => {
-  for (const plugin of plugins) {
-    plugin({ prototype: core }, { ...waktos, createInstance });
+    return parseZoneParts(inputTimestamp, this.zoneCode, this.localeCode);
   }
 
-  return waktos;
-};
+  private constructor(timestamp: number, locale: string, zone: string) {
+    if (!isTimestamp(timestamp))
+      throw new RangeError("Invalid date timestamp.");
+    this.timestamp = timestamp;
+    this.localeCode = locale;
+    this.zoneCode = zone;
+  }
 
-export default waktos;
+  private static resolveTimestamp(value: DateInput | Waktos): number {
+    return value instanceof Waktos ? value.timestamp : parseInput(value);
+  }
+
+  private static resolveUtcTimestamp(value: DateInput | Waktos): number {
+    return value instanceof Waktos ? value.timestamp : parseInputUtc(value);
+  }
+
+  private static readonly installedPlugin = new Set<Plugin>();
+
+  static now(): Waktos {
+    return new Waktos(Date.now(), LOCALE, ZONE);
+  }
+
+  static local(input: DateInput | Waktos): Waktos {
+    return new Waktos(Waktos.resolveTimestamp(input), LOCALE, ZONE);
+  }
+
+  static utc(input: DateInput | Waktos): Waktos {
+    return new Waktos(Waktos.resolveUtcTimestamp(input), LOCALE, "UTC");
+  }
+
+  static zoned(
+    input: string,
+    zoneCode: string,
+    disambiguation: Disambiguation = "compatible"
+  ): Waktos {
+    const zone = normalizeZone(zoneCode);
+    const wall = parseWallString(input);
+    const timestamp = resolveWallTime(
+      wall,
+      zone,
+      LOCALE,
+      resolveDisambiguation(disambiguation)
+    );
+    return new Waktos(timestamp, LOCALE, zone);
+  }
+
+  static from(input: DateInput | Waktos): Waktos {
+    return new Waktos(Waktos.resolveTimestamp(input), LOCALE, ZONE);
+  }
+
+  static isValid(input: unknown): boolean {
+    if (input instanceof Waktos) return true;
+    return parseInputSafe(input, false) !== undefined;
+  }
+
+  static extend(plugin: Plugin | readonly Plugin[]): typeof Waktos {
+    const plugins: readonly Plugin[] =
+      typeof plugin === "function" ? [plugin] : plugin;
+
+    for (const entry of plugins) {
+      if (typeof entry !== "function")
+        throw new TypeError("Invalid plugin entry.");
+
+      if (this.installedPlugin.has(entry)) continue;
+
+      entry(this, api);
+      this.installedPlugin.add(entry);
+    }
+
+    return this;
+  }
+
+  static ordinal(localeCode: string, handler: OrdinalFn): typeof Waktos {
+    void localeCode;
+    void handler;
+    throw new Error("'ordinalFormat' plugin is not installed.");
+  }
+
+  public locale(localeCode: string): Waktos {
+    return new Waktos(
+      this.timestamp,
+      normalizeLocale(localeCode),
+      this.zoneCode
+    );
+  }
+
+  public zone(zoneCode: string): Waktos {
+    return new Waktos(this.timestamp, this.localeCode, normalizeZone(zoneCode));
+  }
+
+  public local(): Waktos {
+    return new Waktos(this.timestamp, this.localeCode, ZONE);
+  }
+
+  public utc(): Waktos {
+    return new Waktos(this.timestamp, this.localeCode, "UTC");
+  }
+
+  public add(duration: Duration): Waktos {
+    const normalizedDuration = normalizeDuration(duration);
+
+    const timestamp = shiftZone(
+      this.timestamp,
+      normalizedDuration,
+      this.zoneCode,
+      this.localeCode,
+      1
+    );
+    return new Waktos(timestamp, this.localeCode, this.zoneCode);
+  }
+
+  public subtract(duration: Duration): Waktos {
+    const normalizedDuration = normalizeDuration(duration);
+
+    const timestamp = shiftZone(
+      this.timestamp,
+      normalizedDuration,
+      this.zoneCode,
+      this.localeCode,
+      -1
+    );
+    return new Waktos(timestamp, this.localeCode, this.zoneCode);
+  }
+
+  public diff(other: DateInput | Waktos, unit: Unit): number {
+    const normalizedUnit = normalizeUnit(unit);
+    const otherTimestamp = Waktos.resolveTimestamp(other);
+    const deltaMs = this.timestamp - otherTimestamp;
+    if (normalizedUnit === "millisecond") return deltaMs;
+    if (normalizedUnit === "second") return deltaMs / MS_SECOND;
+    if (normalizedUnit === "minute") return deltaMs / MS_MINUTE;
+    if (normalizedUnit === "hour") return deltaMs / MS_HOUR;
+    if (normalizedUnit === "day") return deltaMs / MS_DAY;
+
+    const calendarUnit: "month" | "year" =
+      normalizedUnit === "month" ? "month" : "year";
+
+    return diffCalendar(
+      this.timestamp,
+      otherTimestamp,
+      this.zoneCode,
+      this.localeCode,
+      calendarUnit,
+      this.components(),
+      this.contextParts(other, otherTimestamp)
+    );
+  }
+
+  public isBefore(other: DateInput | Waktos): boolean {
+    return this.timestamp < Waktos.resolveTimestamp(other);
+  }
+
+  public isAfter(other: DateInput | Waktos): boolean {
+    return this.timestamp > Waktos.resolveTimestamp(other);
+  }
+
+  public isSame(other: DateInput | Waktos): boolean {
+    return this.timestamp === Waktos.resolveTimestamp(other);
+  }
+
+  public format(pattern: string): string {
+    if (!pattern || typeof pattern !== "string")
+      throw new TypeError("Invalid format pattern.");
+
+    return formatPattern(
+      this.timestamp,
+      this.localeCode,
+      this.zoneCode,
+      pattern
+    );
+  }
+
+  public toString(): string {
+    return this.format("YYYY-MM-DDTHH:mm:ss.SSSZ");
+  }
+
+  public toISOString(): string {
+    return new Date(this.timestamp).toISOString();
+  }
+
+  public toJSON(): string {
+    return this.toISOString();
+  }
+
+  public toDate(): Date {
+    return new Date(this.timestamp);
+  }
+
+  public valueOf(): number {
+    return this.timestamp;
+  }
+
+  public context(): { locale: string; zone: string } {
+    return { locale: this.localeCode, zone: this.zoneCode };
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
+interface Waktos extends Extensions {
+  readonly __waktos?: undefined;
+}
+
+export default Waktos;
 export type {
-  ArithmeticUnit,
-  BoundaryUnit,
-  ComparisonUnit,
-  ComponentUnit,
-  Constructor,
-  DateTimeComponents,
-  Factory,
-  Plugin,
-  Waktos,
+  DateInput,
+  DateParts,
+  Disambiguation,
+  Duration,
+  OrdinalFn,
+  PluginCache,
+  Unit
 };
-
-export { type Locale } from './locale';
-export { type DateInput } from './utils';
