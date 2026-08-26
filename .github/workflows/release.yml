@@ -1,3 +1,4 @@
+
 name: Release
 
 on:
@@ -51,6 +52,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Debug npm environment
+        run: |
+          node --version
+          npm --version
+          pnpm --version
+          npm config get registry
+          npm config get userconfig
+          npm config get //registry.npmjs.org/:_authToken
+          cat "$(npm config get userconfig)" || true
 
       - name: Semantic Release
         env:
