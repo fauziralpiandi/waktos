@@ -1,140 +1,109 @@
-import type { Constructor, Waktos } from '..';
-import { MILLISECOND } from '../constants';
-import type { Locale, RelativeUnit } from '../locale';
-import { type DateInput, parseInput } from '../utils';
+import type Waktos from "..";
+import type { DateInput, Plugin } from "..";
 
-declare module '..' {
-  interface Waktos {
-    from(source?: DateInput): string;
-    since(source?: DateInput): string;
-    to(target?: DateInput): string;
-    until(target?: DateInput): string;
+declare module ".." {
+  interface Extensions {
+    fromNow(): string;
+    from(input: DateInput | Waktos): string;
   }
 }
 
-interface RelativeTime extends Waktos {
-  _timestamp: number;
-  _locale: Locale;
-}
+const truncZero = (value: number): number =>
+  value < 0 ? Math.ceil(value) : Math.floor(value);
 
-const RELATIVE = {
-  UNIT: [
-    'second',
-    'minute',
-    'minute',
-    'hour',
-    'hour',
-    'day',
-    'day',
-    'week',
-    'week',
-    'month',
-  ],
-  THRESHOLD: [
-    44_000, 89_000, 2_640_000, 5_340_000, 75_600_000, 126_000_000, 518_400_000,
-    691_200_000, 2_419_200_000, 2_505_600_000,
-  ],
-  DURATION: [2, 1, 0, 1, 0, 1, 0, 1, 0, 1], // 0 = calculate dynamically, 1+ = fixed count
-  DIVISOR: [
-    0,
-    MILLISECOND.MINUTE,
-    MILLISECOND.MINUTE,
-    MILLISECOND.HOUR,
-    MILLISECOND.HOUR,
-    MILLISECOND.DAY,
-    MILLISECOND.DAY,
-    MILLISECOND.WEEK,
-    MILLISECOND.WEEK,
-    MILLISECOND.MONTH,
-  ],
-} as const;
+const subText = (
+  diffMs: number,
+  locale: string,
+  formatterFor: (localeCode: string) => Intl.RelativeTimeFormat,
+  minuteMs: number,
+  hourMs: number,
+  secondMs: number
+): string => {
+  const abs = Math.abs(diffMs);
+  const formatter = formatterFor(locale);
 
-function resolveTimeUnit(millisecond: number): [RelativeUnit, number] {
-  if (millisecond === 0) return ['second', 1];
+  if (abs < minuteMs) {
+    return formatter.format(truncZero(diffMs / secondMs), "second");
+  }
 
-  for (let key = 0; key < RELATIVE.THRESHOLD.length; key++) {
-    const threshold = RELATIVE.THRESHOLD[key];
+  if (abs < hourMs) {
+    return formatter.format(truncZero(diffMs / minuteMs), "minute");
+  }
 
-    if (millisecond <= threshold) {
-      const duration = RELATIVE.DURATION[key];
-      const unit = RELATIVE.UNIT[key];
-      const divisor = RELATIVE.DIVISOR[key];
+  return formatter.format(truncZero(diffMs / hourMs), "hour");
+};
 
-      if (duration > 0) return [unit, duration];
+const relativeTime: Plugin = (waktos, api) => {
+  const w = waktos.prototype;
+  if ("fromNow" in w && "from" in w) {
+    return;
+  }
 
-      if (divisor > 0) {
-        const count =
-          unit === 'week'
-            ? Math.max(2, Math.round(millisecond / divisor)) // "1 week" sounds weird
-            : Math.max(1, Math.round(millisecond / divisor));
+  const {
+    constants: { MS_SECOND, MS_MINUTE, MS_HOUR, MS_DAY }
+  } = api;
 
-        return [unit, count];
+  const formatterCache = api.createCache<string, Intl.RelativeTimeFormat>(24);
+
+  const formatterFor = (locale: string): Intl.RelativeTimeFormat => {
+    const key = `${locale}$long`;
+    const cached = formatterCache.get(key);
+    if (cached) return cached;
+
+    const formatter = new Intl.RelativeTimeFormat(locale, {
+      numeric: "auto"
+    });
+    formatterCache.set(key, formatter);
+    return formatter;
+  };
+
+  const resolveInput = (
+    value: DateInput | Waktos,
+    locale: string,
+    zone: string
+  ): Waktos => {
+    return (value instanceof waktos ? value : waktos.from(value))
+      .locale(locale)
+      .zone(zone);
+  };
+
+  Object.defineProperties(w, {
+    from: {
+      value(this: Waktos, input: DateInput | Waktos) {
+        const { locale, zone } = this.context();
+        const target = resolveInput(input, locale, zone);
+
+        const diffMs = this.valueOf() - target.valueOf();
+        const abs = Math.abs(diffMs);
+        if (abs < MS_DAY)
+          return subText(
+            diffMs,
+            locale,
+            formatterFor,
+            MS_MINUTE,
+            MS_HOUR,
+            MS_SECOND
+          );
+
+        const formatter = formatterFor(locale);
+
+        const years = this.diff(target, "year");
+        if (Math.abs(years) >= 1) return formatter.format(years, "year");
+
+        const months = this.diff(target, "month");
+        if (Math.abs(months) >= 1) return formatter.format(months, "month");
+
+        const days = truncZero(this.diff(target, "day"));
+
+        return formatter.format(days, "day");
       }
-
-      return [unit, 1];
+    },
+    fromNow: {
+      value(this: Waktos) {
+        return this.from(Date.now());
+      }
     }
-  }
-
-  const monthCount = Math.max(1, Math.round(millisecond / MILLISECOND.MONTH));
-
-  return monthCount >= 12
-    ? ['year', Math.max(1, Math.trunc(monthCount / 12))]
-    : ['month', monthCount];
-}
-
-function relativeTime(source: number, target: number, locale: Locale): string {
-  const diff = target - source;
-  const absDiff = Math.abs(diff);
-
-  if (absDiff <= 5000) {
-    // under 5 seconds feels like "now" to humans
-    const text = locale.format.relative.units.second.singular;
-
-    return locale.rtl ? `\u202B${text}\u202C` : text;
-  }
-
-  const [unit, count] = resolveTimeUnit(absDiff);
-  const unitConfig = locale.format.relative.units[unit];
-  const text =
-    count === 1
-      ? unitConfig.singular
-      : unitConfig.plural.replace(
-          '[n]',
-          locale.format.numeral?.(count) ?? String(count),
-        );
-  const template = (
-    diff > 0 ? locale.format.relative.future : locale.format.relative.past
-  ).replace('[s]', text);
-
-  return locale.rtl ? `\u202B${template}\u202C` : template;
-}
-
-export default function plugin(constructor: Constructor): void {
-  const w = constructor.prototype;
-
-  Object.assign(w, {
-    from(this: RelativeTime, source?: DateInput): string {
-      return relativeTime(
-        parseInput(source ?? Date.now()),
-        this._timestamp,
-        this._locale,
-      );
-    },
-
-    since(this: RelativeTime, source?: DateInput): string {
-      return this.from(source);
-    },
-
-    to(this: RelativeTime, target?: DateInput): string {
-      return relativeTime(
-        this._timestamp,
-        parseInput(target ?? Date.now()),
-        this._locale,
-      );
-    },
-
-    until(this: RelativeTime, target?: DateInput): string {
-      return this.to(target);
-    },
   });
-}
+};
+
+export default relativeTime;

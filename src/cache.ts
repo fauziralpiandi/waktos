@@ -1,46 +1,30 @@
-class Lru<K, V> {
-  readonly #cache = new Map<K, V>();
-  readonly #maxSize: number;
+export class Cache<K, V> {
+  declare private store: Map<K, V>;
+  declare private maxSize: number;
 
-  constructor(maxSize = 75) {
-    this.#maxSize = maxSize <= 0 ? 75 : maxSize; // most use cases
-  }
+  constructor(maxSize: number) {
+    if (!Number.isInteger(maxSize) || maxSize < 1) {
+      throw new RangeError("Invalid cache size.");
+    }
 
-  #bump(key: K, value: V): void {
-    this.#cache.delete(key);
-    this.#cache.set(key, value);
+    this.store = new Map<K, V>();
+    this.maxSize = maxSize;
   }
 
   get(key: K): V | undefined {
-    const value = this.#cache.get(key);
+    if (!this.store.has(key)) return undefined;
+    const value = this.store.get(key) as V;
 
-    if (value !== undefined) this.#bump(key, value);
-
+    this.store.delete(key);
+    this.store.set(key, value);
     return value;
   }
 
   set(key: K, value: V): void {
-    if (this.#cache.has(key)) {
-      this.#bump(key, value);
-
-      return;
+    if (!this.store.delete(key) && this.store.size >= this.maxSize) {
+      this.store.delete(this.store.keys().next().value as K);
     }
 
-    if (this.#cache.size >= this.#maxSize) {
-      const iterator = this.#cache.keys();
-      const oldestEntry = iterator.next();
-
-      if (!oldestEntry.done && oldestEntry.value !== undefined) {
-        this.#cache.delete(oldestEntry.value);
-      }
-    }
-
-    this.#cache.set(key, value);
-  }
-
-  get size(): number {
-    return this.#cache.size;
+    this.store.set(key, value);
   }
 }
-
-export { Lru as Cache };

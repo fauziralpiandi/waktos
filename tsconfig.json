@@ -1,46 +1,27 @@
 {
   "compilerOptions": {
-    // Configuration
-    "target": "ES2021",
-    "lib": ["ES2021", "ES2021.Intl"],
-    "types": ["node"],
-    "module": "ES2022",
-    "moduleResolution": "bundler",
+    "target": "ES2020",
+    "lib": ["ES2020", "ES2021.Intl"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": true,
+
     "useDefineForClassFields": true,
 
-    // Module System
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "isolatedModules": true,
-
-    // Type Checking
-    "strict": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": true,
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "noImplicitThis": true,
-    "noImplicitOverride": true,
-
-    // Additional Checks
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
-    "allowUnreachableCode": false,
-    "allowUnusedLabels": false,
-
-    // Emit
-    "noEmit": true,
-    "noEmitOnError": true,
-    "removeComments": true,
-
-    // Interop
+    "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": true,
+
+    "noEmit": true,
+    "types": ["node"]
   },
-  "include": ["src", "tests", "bench"],
+  "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

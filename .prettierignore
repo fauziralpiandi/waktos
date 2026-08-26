@@ -1,0 +1,5 @@
+.cache
+.config
+.local
+.upm
+pnpm-lock.yaml
